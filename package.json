@@ -1,0 +1,20 @@
+{
+  "name": "consistency-eval",
+  "private": true,
+  "version": "1.0.0",
+  "description": "软件质量评价 Agent：需求→设计→代码一致性评价",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "node server/node_modules/tsx/dist/cli.mjs watch server/src/index.ts",
+    "dev:web": "node web/node_modules/vite/bin/vite.js web",
+    "build": "node scripts/build.mjs",
+    "start": "node server/dist/index.js",
+    "typecheck": "node scripts/typecheck.mjs",
+    "smoke": "node server/node_modules/tsx/dist/cli.mjs server/src/tools/smoke.ts",
+    "eval:heuristic": "node server/node_modules/tsx/dist/cli.mjs server/src/tools/evaluate-heuristic.ts",
+    "mock:llm": "node scripts/mock-llm.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
