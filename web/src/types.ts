@@ -100,6 +100,9 @@ export interface DbField {
 
 export interface DesignUnit {
   code: string;
+  pointId?: string;
+  sourceKind?: "table" | "database" | "text" | "manual";
+  structureOrigin?: "rule" | "llm" | "manual";
   sourceId: string;
   parentSourceId: string;
   type: "模块" | "子功能" | "数据表" | "页面";
@@ -111,9 +114,10 @@ export interface DesignUnit {
   input: string;
   output: string;
   chapter: string;
+  chapterPath?: string[];
   location: SourceLocation;
   confidence: number;
-  origin: "rule" | "llm";
+  origin: "rule" | "llm" | "manual";
   summary: string;
   obligations: string[];
   keywords: string[];
@@ -157,6 +161,7 @@ export interface StoredDocument {
   requirements: RequirementUnit[];
   requirementPoints?: unknown[];
   designUnits: DesignUnit[];
+  designPoints?: unknown[];
   outline: OutlineNode[];
   stats: DocumentStats;
   warnings: string[];
@@ -181,6 +186,7 @@ export interface DocumentSummary {
   requirementCount: number;
   requirementPointCount?: number;
   designCount: number;
+  designPointCount?: number;
 }
 
 export type CodeSymbolKind =

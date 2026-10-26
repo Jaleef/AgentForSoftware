@@ -15,6 +15,7 @@ import {
 import { getStore, mutateStore, projectDir, readSettings } from "../store.js";
 import { nowIso } from "../util/id.js";
 import { addManualRequirement, deleteRequirementUnit } from "../services/requirements.js";
+import { addManualDesignUnit, deleteDesignUnit } from "../services/design.js";
 
 export const documentsRouter = Router();
 
@@ -254,6 +255,54 @@ documentsRouter.patch("/projects/:projectId/requirements/:code", async (req, res
     return;
   }
   res.json(result);
+});
+
+documentsRouter.post("/projects/:projectId/design-units", async (req, res) => {
+  const projectId = req.params.projectId;
+  const data = await getStore();
+  const project = data.projects.find((item) => item.id === projectId);
+  if (!project) {
+    res.status(404).json({ error: "项目不存在" });
+    return;
+  }
+  try {
+    const unit = await addManualDesignUnit(projectId, {
+      type: req.body?.type !== undefined ? String(req.body.type) : undefined,
+      name: req.body?.name !== undefined ? String(req.body.name) : undefined,
+      description: req.body?.description !== undefined ? String(req.body.description) : undefined,
+      detail: req.body?.detail !== undefined ? String(req.body.detail) : undefined,
+      subsystem: req.body?.subsystem !== undefined ? String(req.body.subsystem) : undefined,
+      interfaceText: req.body?.interfaceText !== undefined ? String(req.body.interfaceText) : undefined,
+      input: req.body?.input !== undefined ? String(req.body.input) : undefined,
+      output: req.body?.output !== undefined ? String(req.body.output) : undefined,
+      obligations: req.body?.obligations,
+      sourceId: req.body?.sourceId !== undefined ? String(req.body.sourceId) : undefined,
+      reviewNote: req.body?.reviewNote !== undefined ? String(req.body.reviewNote) : undefined,
+    });
+    res.status(201).json({ unit });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+documentsRouter.delete("/projects/:projectId/design-units/:code", async (req, res) => {
+  const projectId = req.params.projectId;
+  const data = await getStore();
+  const project = data.projects.find((item) => item.id === projectId);
+  if (!project) {
+    res.status(404).json({ error: "项目不存在" });
+    return;
+  }
+  try {
+    const deleted = await deleteDesignUnit(projectId, req.params.code);
+    if (!deleted) {
+      res.status(404).json({ error: "设计单元不存在" });
+      return;
+    }
+    res.json({ ok: true, deleted });
+  } catch (err) {
+    res.status(409).json({ error: (err as Error).message });
+  }
 });
 
 documentsRouter.patch("/projects/:projectId/design-units/:code", async (req, res) => {

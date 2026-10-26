@@ -252,7 +252,10 @@ export async function runRequirementAgent(
   }
   const acceptedTextPoints = points.filter((point) => point.kind === "text" && point.accepted).length;
   onProgress?.("LLM 归纳子系统类别…");
-  const taxonomy = await generateSubsystemTaxonomy(points, client);
+  const taxonomy = await generateSubsystemTaxonomy(
+    points.filter((point) => point.judged && point.accepted),
+    client,
+  );
   warnings.push(...taxonomy.warnings);
   if (!taxonomy.usedLlm && points.some((point) => point.accepted)) {
     warnings.push("未成功生成子系统分类，需求单元将统一归入“全局”。");

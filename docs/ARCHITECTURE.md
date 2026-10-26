@@ -37,17 +37,19 @@ DOCX ──► ZIP/OOXML 解析 ──► 块序列（段落/表格）
 | `src/parsers/xml.ts` | 容错 XML DOM 解析器，保留元素顺序与属性 |
 | `src/parsers/docx.ts` | OOXML 正文遍历：段落样式、标题层级、表格、合并单元格、分页标记、页码/行号估算 |
 | `src/parsers/requirements.ts` | 需求点抽取（表格规则点 + 文本候选点）、规则回退单元、稳定编号 |
-| `src/parsers/design.ts` | 设计表、数据库表、页面章节抽取；字段与接口义务 |
+| `src/parsers/design.ts` | 设计点抽取（设计表规则点、数据库/文本候选点）、规则回退单元、字段与接口义务 |
 | `src/parsers/code.ts` | 代码目录遍历、多语言符号/路由/模型抽取、代码树构建 |
-| `src/llm/requirements.ts` | 文本需求点判定、LLM 生成需求单元（类型/子系统/义务/摘要） |
+| `src/llm/requirements.ts` | 文本需求点判定、LLM 生成需求单元 |
+| `src/llm/design.ts` | 文本/数据库设计点判定、LLM 生成设计单元 |
+| `src/llm/taxonomy.ts` | 从需求/设计章节路径归纳统一子系统分类 |
 | `src/evaluation/retrieval.ts` | 中英文混合分词、类型亲和度、候选设计与代码排序 |
 | `src/evaluation/engine.ts` | 批量 LLM 判定、结果校验、启发式回退、进度与取消 |
 | `src/evaluation/summary.ts` | 覆盖率、得分、分子系统/类型分桶、P0/P1/P2 |
 | `src/evaluation/runner.ts` | 任务生命周期、LLM 预检、持久化进度、取消、重启恢复 |
 | `src/llm/client.ts` | OpenAI 兼容 Chat Completions、JSON 解析、重试、并发控制、连接测试 |
-| `src/llm/enrich.ts` | 需求/设计摘要、原子义务、关键词、类型分类 |
 | `src/services/documents.ts` | 上传落盘、解析、统计、重新拆分、后台 LLM 整理 |
 | `src/services/requirements.ts` | 手工新增/删除需求单元、`SRS-MAN-NNN` 编号、同步需求点 |
+| `src/services/design.ts` | 手工新增/删除设计单元、`SDD-MAN-NNN` 编号、同步设计点 |
 | `src/services/projects.ts` | 项目聚合视图 |
 | `src/services/report.ts` | Markdown/CSV 报告生成 |
 | `src/store.ts` | JSON 文件存储、串行化写入、原子替换、设置脱敏 |
@@ -102,15 +104,20 @@ XML 解析器支持命名空间前缀、属性、CDATA、注释、字符实体�
 
 ### 4.2 设计
 
-| 来源 | 识别 | 编号 |
-| --- | --- | --- |
-| 7×2 / 6×2 设计表 | 含 `模块编号`/`子功能编号` + 功能描述 | `SDD-FUN-NNN` 或 `SDD-MOD-NNN` |
-| 数据库表 | 表头含 `字段名称` + `字段类型/字段含义` | `SDD-DB-NNN` |
-| 页面章节 | 位于 H1「页面设计」下的 H3–H5 标题 | `SDD-PAGE-NNN` |
+设计拆分与需求一致：先抽设计点，再由 LLM 生成设计单元；不使用章节名推断子系统。
 
-- 表格前一行的“登录信息表”作为数据表名称。
-- 接口签名、输入输出、字段列表都会写入设计义务/关键词，参与代码检索。
-- 页面标题去掉“设计”后缀；过滤“分级图/跳转图/接口”等非页面章节。
+| 阶段 | 来源 | 规则 | 来源标记 / 置信度 |
+| --- | --- | --- | --- |
+| 设计点 | 7×2 / 6×2 设计表 | 含 `模块编号`/`子功能编号` + 功能描述；一张表 = 一个设计点 | `origin=rule`，`confidence=1.0` |
+| 设计点 | 数据库表 | 表头含 `字段名称` + `字段类型/字段含义`，字段结构保留为候选数据 | `origin=llm`，由 LLM 判定是否构成数据表设计单元 |
+| 设计点 | 文本章节 | 叶子章节的正文/页面描述/UI 表格作为候选 | `origin=llm`，由 LLM 判定是否构成设计单元 |
+| 子系统分类 | 已接受设计点的章节路径 | LLM 归纳 3–8 个概括类别并建立路径映射 | `designSubsystemTaxonomy` |
+| 设计单元 | 全部已接受设计点 | LLM 生成名称、类型、摘要、设计义务、关键词；结构化表保持类型/接口/输入输出 | 继承设计点来源与置信度 |
+
+- 每个设计点保存带编号的 `chapterPath`，例如 `5 详细设计 / 5.1 平台模块详细设计 / 5.1.1 管理模块设计 / 5.1.1.4 数据库管理`。
+- 数据表字段列表、接口签名、输入输出会保留到设计单元，参与代码检索和设计→代码评价。
+- 数据库表/文本候选只有 LLM 判定通过后才成为设计单元；无 LLM 时仅保留结构化设计表单元。
+- 子系统类别上限 10 个，避免把具体功能名当作子系统。
 
 ### 4.3 代码
 
@@ -181,3 +188,6 @@ XML 解析器支持命名空间前缀、属性、CDATA、注释、字符实体�
 - **新增评价维度**：在 `types.ts` 扩展 `Relation`，在 `engine.ts` 增加链路，在 `summary.ts` 增加权重。
 - **接入其他模型**：`LlmClient` 已是通用 OpenAI 兼容层；如协议不同，替换 `chat()` 即可。
 - **持久化升级**：`store.ts` 是唯一存储入口，可替换为 SQLite/PostgreSQL。
+
+
+

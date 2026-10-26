@@ -104,8 +104,36 @@ export interface DbField {
   defaultValue: string;
 }
 
+export interface DesignPoint {
+  id: string;
+  kind: "table" | "database" | "text";
+  origin: "rule" | "llm";
+  confidence: number;
+  /** Structural hint for tables; text/database points may leave it empty for the LLM to decide. */
+  typeHint: DesignUnitType | "";
+  chapter: string;
+  chapterPath: string[];
+  location: SourceLocation;
+  sourceId: string;
+  parentSourceId: string;
+  name: string;
+  description: string;
+  detail: string;
+  interfaceText: string;
+  input: string;
+  output: string;
+  fields: DbField[];
+  text: string;
+  judged: boolean;
+  accepted: boolean;
+  reason: string;
+}
+
 export interface DesignUnit {
   code: string;
+  pointId?: string;
+  sourceKind?: "table" | "database" | "text" | "manual";
+  structureOrigin?: "rule" | "llm" | "manual";
   sourceId: string;
   parentSourceId: string;
   type: DesignUnitType;
@@ -117,9 +145,10 @@ export interface DesignUnit {
   input: string;
   output: string;
   chapter: string;
+  chapterPath?: string[];
   location: SourceLocation;
   confidence: number;
-  origin: "rule" | "llm";
+  origin: "rule" | "llm" | "manual";
   summary: string;
   obligations: string[];
   keywords: string[];
@@ -149,6 +178,7 @@ export interface ParsedDesign {
   kind: "sdd";
   pageCount: number;
   designUnits: DesignUnit[];
+  designPoints: DesignPoint[];
   outline: OutlineNode[];
   stats: DocumentStats;
   warnings: string[];
@@ -187,6 +217,10 @@ export interface StoredDocument {
   /** LLM-generated, compact subsystem taxonomy used by requirement units. */
   subsystemTaxonomy?: SubsystemCategory[];
   designUnits: DesignUnit[];
+  /** Raw design points are kept so the design LLM pipeline can be re-run. */
+  designPoints?: DesignPoint[];
+  /** LLM-generated, compact subsystem taxonomy used by design units. */
+  designSubsystemTaxonomy?: SubsystemCategory[];
   outline: OutlineNode[];
   stats: DocumentStats;
   warnings: string[];

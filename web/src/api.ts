@@ -1,6 +1,7 @@
 import type {
   Campaign,
   CodeFile,
+  DesignUnit,
   DocumentKind,
   DocumentSummary,
   LlmSettings,
@@ -97,6 +98,29 @@ export const api = {
     request<{ unit: unknown }>(`/projects/${projectId}/requirements/${code}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
+    }),
+  createDesignUnit: (
+    projectId: string,
+    input: {
+      type?: DesignUnit["type"];
+      name: string;
+      description?: string;
+      detail?: string;
+      subsystem?: string;
+      interfaceText?: string;
+      input?: string;
+      output?: string;
+      obligations?: string;
+      sourceId?: string;
+    },
+  ) =>
+    request<{ unit: DesignUnit }>(`/projects/${projectId}/design-units`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }).then((r) => r.unit),
+  deleteDesignUnit: (projectId: string, code: string) =>
+    request<{ ok: boolean; deleted: DesignUnit }>(`/projects/${projectId}/design-units/${code}`, {
+      method: "DELETE",
     }),
   patchDesignUnit: (
     projectId: string,

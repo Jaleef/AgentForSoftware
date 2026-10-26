@@ -3,8 +3,8 @@ import { join } from "node:path";
 import type { DocumentKind, DocumentStats, ParsedDocument, StoredDocument } from "../types.js";
 import { parseDocxBuffer } from "../parsers/docx.js";
 import { parseRequirements, extractRequirementPoints } from "../parsers/requirements.js";
-import { parseDesign } from "../parsers/design.js";
-import { enrichDesign } from "../llm/enrich.js";
+import { parseDesign, extractDesignPoints } from "../parsers/design.js";
+import { runDesignAgent } from "../llm/design.js";
 import { runRequirementAgent } from "../llm/requirements.js";
 import { LlmClient } from "../llm/client.js";
 import {
@@ -66,12 +66,16 @@ export function recomputeDesignStats(doc: StoredDocument): void {
   if (doc.kind !== "sdd") return;
   const byType: Record<string, number> = {};
   const bySubsystem: Record<string, number> = {};
+  const byChapter: Record<string, number> = {};
   for (const u of doc.designUnits) {
     byType[u.type] = (byType[u.type] ?? 0) + 1;
     bySubsystem[u.subsystem] = (bySubsystem[u.subsystem] ?? 0) + 1;
+    const chapter = u.chapter.split(" / ").slice(-1)[0] || "未分类";
+    byChapter[chapter] = (byChapter[chapter] ?? 0) + 1;
   }
   doc.stats.byType = byType;
   doc.stats.bySubsystem = bySubsystem;
+  doc.stats.byChapter = byChapter;
   doc.stats.total = doc.designUnits.length;
 }
 
@@ -110,6 +114,7 @@ export async function saveParsedDocument(options: SaveParsedOptions): Promise<St
     requirements: parsed.kind === "srs" ? parsed.requirements : [],
     requirementPoints: parsed.kind === "srs" ? parsed.requirementPoints : [],
     designUnits: parsed.kind === "sdd" ? parsed.designUnits : [],
+    designPoints: parsed.kind === "sdd" ? parsed.designPoints : [],
     outline: parsed.outline,
     stats: parsed.stats,
     warnings: parsed.warnings,
@@ -232,29 +237,54 @@ async function runEnrichmentInternal(docId: string): Promise<void> {
       return;
     }
 
-    const clone: StoredDocument = {
-      ...doc,
-      designUnits: structuredClone(doc.designUnits),
-    };
-    const result = await enrichDesign(clone.designUnits, client, concurrency);
+    // Design pipeline: structured tables + LLM judgement of text/database candidates.
+    let points = doc.designPoints ?? [];
+    if (!points.length) {
+      const extracted = extractDesignPoints(parseDocxBuffer(readFileSync(resolveStoredPath(doc))));
+      points = extracted.points;
+    }
+    if (!points.length) throw new Error("未解析到设计点，请先执行「重新拆分」后再让 LLM 生成设计单元。");
+    const result = await runDesignAgent(doc.id, structuredClone(points), client, concurrency);
     await mutateStore((data) => {
       const target = data.documents.find((d) => d.id === docId);
       if (!target) return;
       const reviews = new Map(
         target.designUnits
-          .filter((unit) => unit.reviewStatus === "confirmed" || unit.reviewNote)
-          .map((unit) => [unit.code, { reviewStatus: unit.reviewStatus, reviewNote: unit.reviewNote }]),
+          .filter((unit) => unit.pointId && (unit.reviewStatus === "confirmed" || unit.reviewNote))
+          .map((unit) => [unit.pointId as string, { reviewStatus: unit.reviewStatus, reviewNote: unit.reviewNote }]),
       );
-      target.designUnits = clone.designUnits.map((unit) => {
-        const review = reviews.get(unit.code);
-        return review ? { ...unit, ...review } : unit;
-      });
+      target.designPoints = result.points;
+      target.designSubsystemTaxonomy = result.taxonomy;
+      const manualUnits = target.designUnits.filter((unit) => unit.origin === "manual");
+      target.designUnits = [
+        ...result.units.map((unit) => {
+          const review = unit.pointId ? reviews.get(unit.pointId) : undefined;
+          return review ? { ...unit, ...review } : unit;
+        }),
+        ...manualUnits,
+      ];
       target.status = "parsed";
       target.updatedAt = nowIso();
+      const baseWarnings = target.warnings.filter(
+        (warning) =>
+          !warning.includes("文本设计候选") &&
+          !warning.includes("数据库表候选") &&
+          !warning.includes("未识别到结构化设计表") &&
+          !warning.includes("未识别到模块/子功能设计单元") &&
+          !warning.includes("未识别到数据库表设计") &&
+          !warning.includes("规则解析设计点") &&
+          !warning.includes("勾选了 LLM") &&
+          !warning.startsWith("LLM 已") &&
+          !warning.startsWith("LLM 整理") &&
+          !warning.startsWith("LLM 未能") &&
+          !warning.startsWith("LLM 解析失败") &&
+          !warning.startsWith("设计点判定失败") &&
+          !warning.startsWith("设计单元生成失败"),
+      );
       target.warnings = [
-        ...target.warnings.filter((warning) => !warning.startsWith("LLM 整理")),
-        ...(result.updated > 0 ? [`LLM 已整理 ${result.updated} 个设计单元（摘要/义务）。`] : []),
-        ...result.warnings.map((warning) => `LLM 整理未完全成功：${warning}`),
+        ...baseWarnings,
+        `规则解析设计点 ${result.tablePoints} 个（设计表，置信度 100%）；数据库表候选 ${result.databasePoints} 个，LLM 判定 ${result.acceptedDatabasePoints} 个；文本候选 ${result.textPoints} 个，LLM 判定 ${result.acceptedTextPoints} 个；归纳子系统类别 ${result.taxonomy.length} 个；生成设计单元 ${result.units.length} 个。`,
+        ...result.warnings,
       ];
       recomputeDesignStats(target);
     });
@@ -292,9 +322,14 @@ export async function reparseDocument(docId: string): Promise<StoredDocument | u
       const manualUnits = target.requirements.filter((unit) => unit.origin === "manual");
       target.requirements = [...parsed.requirements, ...manualUnits];
       target.requirementPoints = parsed.requirementPoints;
+      target.subsystemTaxonomy = undefined;
       recomputeRequirementStats(target);
     } else {
-      target.designUnits = parsed.designUnits;
+      const manualUnits = target.designUnits.filter((unit) => unit.origin === "manual");
+      target.designUnits = [...parsed.designUnits, ...manualUnits];
+      target.designPoints = parsed.designPoints;
+      target.designSubsystemTaxonomy = undefined;
+      recomputeDesignStats(target);
     }
     return target;
   });
@@ -320,6 +355,7 @@ export function documentSummary(doc: StoredDocument) {
     requirementCount: doc.requirements.length,
     requirementPointCount: (doc.requirementPoints ?? []).length,
     designCount: doc.designUnits.length,
+    designPointCount: (doc.designPoints ?? []).length,
   };
 }
 

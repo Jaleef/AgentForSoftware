@@ -467,7 +467,7 @@ function DocumentCard({
                 版本 {doc.version} · {formatDate(doc.uploadedAt)} · {formatBytes(doc.size)} ·{" "}
                 {kind === "srs"
                   ? `已生成 ${doc.requirementCount} 个单元 · ${doc.requirementPointCount ?? 0} 个需求点`
-                  : `已拆分 ${doc.designCount} 个单元`}
+                  : `已生成 ${doc.designCount} 个单元 · ${doc.designPointCount ?? 0} 个设计点`}
               </div>
             </div>
             <StatusPill status={doc.status} />

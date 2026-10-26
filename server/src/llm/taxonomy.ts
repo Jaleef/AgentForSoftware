@@ -1,4 +1,4 @@
-import type { RequirementPoint, SubsystemCategory } from "../types.js";
+import type { SubsystemCategory } from "../types.js";
 import type { LlmClient } from "./client.js";
 import { cleanText } from "../util/text.js";
 
@@ -14,6 +14,14 @@ interface ChapterStat {
   chapterPath: string[];
   count: number;
   samples: string[];
+}
+
+/** Minimal shape shared by requirement points and design points. */
+export interface TaxonomyPoint {
+  chapterPath?: string[];
+  chapter?: string;
+  description?: string;
+  text?: string;
 }
 
 interface TaxonomyPayload {
@@ -32,18 +40,17 @@ const TAXONOMY_SYSTEM = `你是资深需求架构师。下面是从一份软件�
 只输出 JSON：
 {"categories":[{"name":"数字孪生平台","description":"..."}],"assignments":[{"chapterPath":"3 需求分析 / 3.3 功能需求 / 3.3.1 ...","category":"数字孪生平台"}]}`;
 
-function pointChapterPath(point: RequirementPoint): string[] {
+function pointChapterPath(point: TaxonomyPoint): string[] {
   if (point.chapterPath?.length) return point.chapterPath;
   return point.chapter ? point.chapter.split(" / ").filter(Boolean) : ["未分类"];
 }
 
 export async function generateSubsystemTaxonomy(
-  points: RequirementPoint[],
+  points: TaxonomyPoint[],
   client: LlmClient,
 ): Promise<TaxonomyResult> {
-  const accepted = points.filter((point) => point.judged && point.accepted);
   const stats = new Map<string, ChapterStat>();
-  for (const point of accepted) {
+  for (const point of points) {
     const chapterPath = pointChapterPath(point);
     const key = chapterPath.join(" / ");
     const current = stats.get(key) ?? { chapterPath, count: 0, samples: [] };
@@ -125,7 +132,7 @@ export async function generateSubsystemTaxonomy(
 }
 
 /** Map a point to the taxonomy category, with parent-prefix fallback. */
-export function taxonomyCategoryFor(point: RequirementPoint, mapping: Map<string, string>): string {
+export function taxonomyCategoryFor(point: TaxonomyPoint, mapping: Map<string, string>): string {
   if (!mapping.size) return "全局";
   const path = pointChapterPath(point);
   for (let length = path.length; length > 0; length--) {

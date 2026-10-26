@@ -57,6 +57,60 @@ function guessSubsystem(text) {
   return "全局";
 }
 
+function handleDesignJudgement(payload) {
+  const items = Array.isArray(payload) ? payload : [];
+  return {
+    items: items.map((entry) => {
+      const text = [entry.name, entry.description, entry.detail, entry.text].filter(Boolean).join("。");
+      const fields = Array.isArray(entry.fields) ? entry.fields : [];
+      const background = /文档概述|范围|引用文档|术语|目录|修订|读者|图$/.test(String(entry.name ?? ""));
+      const designWords = /设计|模块|接口|页面|数据库|字段|输入|输出|调用|协议|功能|流程/.test(text);
+      const accepted = entry.kind === "database" ? fields.length > 0 : !background && designWords && text.length >= 10;
+      const typeHint =
+        entry.kind === "database"
+          ? "数据表"
+          : entry.typeHint || (/页面/.test(text) ? "页面" : /接口/.test(text) ? "模块" : "模块");
+      return {
+        pointId: entry.pointId,
+        isDesignUnit: accepted,
+        confidence: accepted ? 0.88 : 0.7,
+        reason: accepted ? "mock: 描述了可实现的设计结构。" : "mock: 背景/说明性文本，不构成独立设计单元。",
+        typeHint,
+      };
+    }),
+  };
+}
+
+function handleDesignGeneration(payload) {
+  const items = Array.isArray(payload) ? payload : [];
+  return {
+    items: items.map((entry) => {
+      const source = [entry.name, entry.description, entry.detail, entry.text].filter(Boolean).join("。");
+      const type =
+        entry.kind === "database"
+          ? "数据表"
+          : entry.kind === "table" && entry.typeHint
+            ? entry.typeHint
+            : entry.typeHint === "页面"
+              ? "页面"
+              : "模块";
+      return {
+        pointId: entry.pointId,
+        name: entry.name,
+        type,
+        summary: String(source).slice(0, 100),
+        obligations: [
+          "实现设计描述中定义的功能",
+          "按接口约定处理输入并返回输出",
+          "保证数据结构与字段约束一致",
+          "处理异常与边界条件",
+        ],
+        keywords: [type, entry.name, "设计", "接口"].filter(Boolean),
+      };
+    }),
+  };
+}
+
 function handleTaxonomy(payload) {
   const chapters = Array.isArray(payload) ? payload : [];
   const categoryFor = (chapterPath) => {
@@ -267,6 +321,10 @@ const server = http.createServer((req, res) => {
       payload = { content: "正常" };
     } else if (system.includes("判断每一段文本是否构成")) {
       payload = handleTextJudgement(extractJson(user));
+    } else if (system.includes("判断每个候选是否构成")) {
+      payload = handleDesignJudgement(extractJson(user));
+    } else if (system.includes("把每个已确认的设计点")) {
+      payload = handleDesignGeneration(extractJson(user));
     } else if (system.includes("资深需求架构师")) {
       payload = handleTaxonomy(extractJson(user));
     } else if (system.includes("把每个已确认的需求点转换为")) {
