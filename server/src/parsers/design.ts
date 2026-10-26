@@ -242,8 +242,7 @@ export function extractDesignPoints(doc: DocxDocument): { points: DesignPoint[];
       detail: fields
         .map(
           (field) =>
-            `${field.name}｜${field.meaning}｜${field.type}${field.length ? `(${field.length})` : ""}${
-              field.primaryKey ? "｜主键" : ""
+            `${field.name}｜${field.meaning}｜${field.type}${field.length ? `(${field.length})` : ""}${field.primaryKey ? "｜主键" : ""
             }`,
         )
         .join("\n"),
@@ -418,10 +417,10 @@ export function designUnitFromPoint(
       ? fields.obligations
       : point.kind === "database"
         ? point.fields
-            .filter((field) => field.primaryKey)
-            .map((field) => `主键字段 ${field.name} 必须唯一且非空`)
-            .concat(point.fields.slice(0, 3).map((field) => `存储字段 ${field.name}（${field.meaning || field.type}）`))
-            .slice(0, 10)
+          .filter((field) => field.primaryKey)
+          .map((field) => `主键字段 ${field.name} 必须唯一且非空`)
+          .concat(point.fields.slice(0, 3).map((field) => `存储字段 ${field.name}（${field.meaning || field.type}）`))
+          .slice(0, 10)
         : unitObligations(description, point.interfaceText, point.input, point.output);
   return {
     code: "",

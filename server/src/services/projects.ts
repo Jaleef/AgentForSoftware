@@ -28,45 +28,45 @@ export function summarizeProject(data: StoreData, project: Project) {
     ...project,
     requirementDoc: srs
       ? {
-          id: srs.id,
-          originalName: srs.originalName,
-          status: srs.status,
-          uploadedAt: srs.uploadedAt,
-          total: srs.requirements.length,
-          version: srs.version,
-          pageCount: srs.pageCount,
-        }
+        id: srs.id,
+        originalName: srs.originalName,
+        status: srs.status,
+        uploadedAt: srs.uploadedAt,
+        total: srs.requirements.length,
+        version: srs.version,
+        pageCount: srs.pageCount,
+      }
       : undefined,
     designDoc: sdd
       ? {
-          id: sdd.id,
-          originalName: sdd.originalName,
-          status: sdd.status,
-          uploadedAt: sdd.uploadedAt,
-          total: sdd.designUnits.length,
-          version: sdd.version,
-          pageCount: sdd.pageCount,
-        }
+        id: sdd.id,
+        originalName: sdd.originalName,
+        status: sdd.status,
+        uploadedAt: sdd.uploadedAt,
+        total: sdd.designUnits.length,
+        version: sdd.version,
+        pageCount: sdd.pageCount,
+      }
       : undefined,
     snapshot: snapshot
       ? {
-          id: snapshot.id,
-          rootPath: snapshot.rootPath,
-          commit: snapshot.commit,
-          createdAt: snapshot.createdAt,
-          files: snapshot.stats.files,
-          symbols: snapshot.stats.symbols,
-        }
+        id: snapshot.id,
+        rootPath: snapshot.rootPath,
+        commit: snapshot.commit,
+        createdAt: snapshot.createdAt,
+        files: snapshot.stats.files,
+        symbols: snapshot.stats.symbols,
+      }
       : undefined,
     campaignCount: campaigns.length,
     latestCampaign: latest
       ? {
-          id: latest.id,
-          name: latest.name,
-          status: latest.status,
-          score: latest.summary?.score,
-          createdAt: latest.createdAt,
-        }
+        id: latest.id,
+        name: latest.name,
+        status: latest.status,
+        score: latest.summary?.score,
+        createdAt: latest.createdAt,
+      }
       : undefined,
     requirementStats: {
       total: srs?.requirements.length ?? 0,

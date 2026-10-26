@@ -39,7 +39,12 @@ export interface EvaluationOptions {
   client?: LlmClient;
   concurrency: number;
   signal?: AbortSignal;
-  onProgress: (phase: string, done: number, total: number, message: string) => void;
+  onProgress: (
+    phase: string,
+    done: number,
+    total: number,
+    message: string,
+  ) => void;
 }
 
 export interface EvaluationResult {
@@ -57,7 +62,12 @@ interface RawJudgment {
   status?: string;
   targetCodes?: string[];
   targetHandles?: string[];
-  matches?: Array<{ designCode?: string; code?: string; relation?: string; reason?: string }>;
+  matches?: Array<{
+    designCode?: string;
+    code?: string;
+    relation?: string;
+    reason?: string;
+  }>;
   confidence?: number;
   rationale?: string;
   evidence?: string;
@@ -91,11 +101,14 @@ const REQ_STATUS: Record<string, RelationStatus> = {
 };
 
 function normalizeStatus(value: string, level: RelationLevel): RelationStatus {
-  const key = String(value ?? "").trim().toLowerCase();
+  const key = String(value ?? "")
+    .trim()
+    .toLowerCase();
   const mapped = REQ_STATUS[key];
   if (mapped) return mapped;
   if (level === "design_code") {
-    if (["implemented", "done", "covered", "已实现", "一致"].includes(key)) return "satisfied";
+    if (["implemented", "done", "covered", "已实现", "一致"].includes(key))
+      return "satisfied";
   }
   return "unknown";
 }
@@ -112,7 +125,11 @@ function normalizeItems(value: unknown): RawJudgment[] {
     for (const key of ["items", "results", "judgements", "judgments", "data"]) {
       if (Array.isArray(record[key])) return record[key] as RawJudgment[];
     }
-    if (typeof record.requirementCode === "string" || typeof record.designCode === "string") return [value as RawJudgment];
+    if (
+      typeof record.requirementCode === "string" ||
+      typeof record.designCode === "string"
+    )
+      return [value as RawJudgment];
   }
   return [];
 }
@@ -128,7 +145,8 @@ function cleanGaps(value: unknown): string[] {
 
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  for (let i = 0; i < items.length; i += size)
+    out.push(items.slice(i, i + size));
   return out;
 }
 
@@ -144,7 +162,9 @@ function designPayload(unit: DesignUnit) {
     interface: clip(unit.interfaceText, 280),
     input: clip(unit.input, 180),
     output: clip(unit.output, 180),
-    fields: unit.fields.slice(0, 30).map((f) => `${f.name}:${f.meaning || f.type}`),
+    fields: unit.fields
+      .slice(0, 30)
+      .map((f) => `${f.name}:${f.meaning || f.type}`),
   };
 }
 
@@ -261,14 +281,25 @@ function heuristicRequirementRelation(
       status === "missing"
         ? "未检索到语义相近的设计单元（启发式判断，需人工复核）。"
         : `启发式匹配：设计「${names[0]}」与需求关键词重合度 ${(top.score * 100).toFixed(0)}%，需人工确认覆盖完整性。`,
-    evidence: targets[0] ? clip(targets[0].unit.summary || targets[0].unit.description, 150) : "",
-    gaps: status === "satisfied" ? [] : ["启发式无法逐条核验原子义务，需复核输入输出与边界条件"],
-    suggestions: status === "missing" ? "补充对应模块/子功能设计，或在需求中明确由既有模块承载。" : "补充设计说明，覆盖需求中的全部原子义务。",
+    evidence: targets[0]
+      ? clip(targets[0].unit.summary || targets[0].unit.description, 150)
+      : "",
+    gaps:
+      status === "satisfied"
+        ? []
+        : ["启发式无法逐条核验原子义务，需复核输入输出与边界条件"],
+    suggestions:
+      status === "missing"
+        ? "补充对应模块/子功能设计，或在需求中明确由既有模块承载。"
+        : "补充设计说明，覆盖需求中的全部原子义务。",
     method: "heuristic",
   });
 }
 
-function heuristicDesignRelation(design: DesignUnit, ranked: ReturnType<typeof rankCodeCandidates>): Relation {
+function heuristicDesignRelation(
+  design: DesignUnit,
+  ranked: ReturnType<typeof rankCodeCandidates>,
+): Relation {
   const top = ranked[0];
   let status: RelationStatus = "missing";
   let targets: typeof ranked = [];
@@ -276,7 +307,9 @@ function heuristicDesignRelation(design: DesignUnit, ranked: ReturnType<typeof r
   const thresholdPartial = design.type === "页面" ? 0.14 : 0.18;
   if (top && top.score >= thresholdStrong) {
     status = "satisfied";
-    targets = ranked.filter((r) => r.score >= thresholdStrong - 0.08).slice(0, 2);
+    targets = ranked
+      .filter((r) => r.score >= thresholdStrong - 0.08)
+      .slice(0, 2);
   } else if (top && top.score >= thresholdPartial) {
     status = "partial";
     targets = ranked.slice(0, 1);
@@ -288,22 +321,44 @@ function heuristicDesignRelation(design: DesignUnit, ranked: ReturnType<typeof r
     sourceType: design.type,
     sourceSubsystem: design.subsystem,
     targetCodes: targets.map((t) => t.symbol.id),
-    targetNames: targets.map((t) => `${t.symbol.file}:${t.symbol.line} ${t.symbol.name}`),
+    targetNames: targets.map(
+      (t) => `${t.symbol.file}:${t.symbol.line} ${t.symbol.name}`,
+    ),
     status,
     confidence: top ? clamp(0.32 + top.score, 0.3, 0.68) : 0.3,
     rationale:
       status === "missing"
         ? "代码快照中未检索到对应符号（启发式判断，需人工复核）。"
         : `启发式匹配：代码符号「${targets[0]?.symbol.name ?? ""}」与设计关键词重合度 ${(top.score * 100).toFixed(0)}%。`,
-    evidence: targets[0] ? `${targets[0].symbol.file}:${targets[0].symbol.line} ${targets[0].symbol.signature}` : "",
-    gaps: status === "satisfied" ? [] : ["启发式无法核验完整实现，需复核接口、字段与分支"],
-    suggestions: status === "missing" ? "按设计补齐实现，或更新设计说明以反映实际实现。" : "补齐缺失的接口/字段与异常分支，并补充测试。",
+    evidence: targets[0]
+      ? `${targets[0].symbol.file}:${targets[0].symbol.line} ${targets[0].symbol.signature}`
+      : "",
+    gaps:
+      status === "satisfied"
+        ? []
+        : ["启发式无法核验完整实现，需复核接口、字段与分支"],
+    suggestions:
+      status === "missing"
+        ? "按设计补齐实现，或更新设计说明以反映实际实现。"
+        : "补齐缺失的接口/字段与异常分支，并补充测试。",
     method: "heuristic",
   });
 }
 
-export async function runEvaluation(options: EvaluationOptions): Promise<EvaluationResult> {
-  const { requirements, designUnits, snapshot, levels, subsystems, client, concurrency, signal, onProgress } = options;
+export async function runEvaluation(
+  options: EvaluationOptions,
+): Promise<EvaluationResult> {
+  const {
+    requirements,
+    designUnits,
+    snapshot,
+    levels,
+    subsystems,
+    client,
+    concurrency,
+    signal,
+    onProgress,
+  } = options;
   const warnings: string[] = [];
   let warningOverflow = 0;
   const addWarning = (message: string): void => {
@@ -312,10 +367,17 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
   };
 
   const subsystemSet = subsystems.length ? new Set(subsystems) : null;
-  const filteredRequirements = subsystemSet ? requirements.filter((r) => subsystemSet.has(r.subsystem)) : requirements;
-  const filteredDesign = subsystemSet ? designUnits.filter((d) => subsystemSet.has(d.subsystem)) : designUnits;
+  const filteredRequirements = subsystemSet
+    ? requirements.filter((r) => subsystemSet.has(r.subsystem))
+    : requirements;
+  const filteredDesign = subsystemSet
+    ? designUnits.filter((d) => subsystemSet.has(d.subsystem))
+    : designUnits;
 
-  if (levels.includes("requirement_design") && filteredRequirements.length === 0) {
+  if (
+    levels.includes("requirement_design") &&
+    filteredRequirements.length === 0
+  ) {
     throw new Error("没有可评价的需求单元，请先上传并解析需求文档。");
   }
   if (levels.includes("design_code") && filteredDesign.length === 0) {
@@ -326,15 +388,22 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
   }
 
   const designIndex: DesignIndexEntry[] = buildDesignIndex(filteredDesign);
-  const symbolIndex: SymbolIndexEntry[] = snapshot ? buildSymbolIndex(snapshot) : [];
+  const symbolIndex: SymbolIndexEntry[] = snapshot
+    ? buildSymbolIndex(snapshot)
+    : [];
   const designByCode = new Map(filteredDesign.map((d) => [d.code, d]));
   const symbolById = new Map<string, CodeSymbol>();
-  if (snapshot) for (const file of snapshot.files) for (const s of file.symbols) symbolById.set(s.id, s);
+  if (snapshot)
+    for (const file of snapshot.files)
+      for (const s of file.symbols) symbolById.set(s.id, s);
 
   const useLlm = Boolean(client && !client.isMock);
   const reqBatches = useLlm ? chunk(filteredRequirements, 4) : [];
-  const designBatches = useLlm && levels.includes("design_code") ? chunk(filteredDesign, 3) : [];
-  const totalBatches = (levels.includes("requirement_design") ? reqBatches.length : 0) + designBatches.length;
+  const designBatches =
+    useLlm && levels.includes("design_code") ? chunk(filteredDesign, 3) : [];
+  const totalBatches =
+    (levels.includes("requirement_design") ? reqBatches.length : 0) +
+    designBatches.length;
 
   const relations: Relation[] = [];
   let doneBatches = 0;
@@ -347,10 +416,21 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
 
   // ---------- 需求 → 设计 ----------
   if (levels.includes("requirement_design")) {
-    onProgress("requirement_design", 0, Math.max(totalBatches, 1), `正在检索设计候选（${filteredRequirements.length} 条需求）…`);
-    const rankedByCode = new Map<string, ReturnType<typeof rankDesignCandidates>>();
+    onProgress(
+      "requirement_design",
+      0,
+      Math.max(totalBatches, 1),
+      `正在检索设计候选（${filteredRequirements.length} 条需求）…`,
+    );
+    const rankedByCode = new Map<
+      string,
+      ReturnType<typeof rankDesignCandidates>
+    >();
     for (const requirement of filteredRequirements) {
-      rankedByCode.set(requirement.code, rankDesignCandidates(requirement, designIndex, 8));
+      rankedByCode.set(
+        requirement.code,
+        rankDesignCandidates(requirement, designIndex, 8),
+      );
     }
 
     if (useLlm && client) {
@@ -360,7 +440,9 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
         async (batch, batchIndex) => {
           if (signal?.aborted) throw new CancelledError();
           const payload = batch.map((requirement) => {
-            const candidates = (rankedByCode.get(requirement.code) ?? []).slice(0, 6).map((r) => designPayload(r.unit));
+            const candidates = (rankedByCode.get(requirement.code) ?? [])
+              .slice(0, 6)
+              .map((r) => designPayload(r.unit));
             return { requirement: requirementPayload(requirement), candidates };
           });
           let judged = new Map<string, RawJudgment>();
@@ -368,7 +450,10 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
             const response = await client.chatJson<unknown>(
               [
                 { role: "system", content: REQ_SYSTEM },
-                { role: "user", content: `请评审以下需求与候选设计：\n${JSON.stringify(payload, null, 2)}` },
+                {
+                  role: "user",
+                  content: `请评审以下需求与候选设计：\n${JSON.stringify(payload, null, 2)}`,
+                },
               ],
               { temperature: 0.1, maxTokens: 4096, signal },
             );
@@ -378,29 +463,48 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
             }
           } catch (err) {
             if (signal?.aborted) throw new CancelledError();
-            addWarning(`需求→设计批次 ${batchIndex + 1} 调用失败，已回退启发式：${(err as Error).message}`);
+            addWarning(
+              `需求→设计批次 ${batchIndex + 1} 调用失败，已回退启发式：${(err as Error).message}`,
+            );
             judged = new Map();
           }
 
           for (const requirement of batch) {
             const ranked = rankedByCode.get(requirement.code) ?? [];
-            const candidates = new Set((rankedByCode.get(requirement.code) ?? []).slice(0, 6).map((r) => r.unit.code));
+            const candidates = new Set(
+              (rankedByCode.get(requirement.code) ?? [])
+                .slice(0, 6)
+                .map((r) => r.unit.code),
+            );
             const item = judged.get(requirement.code);
             if (!item) {
               relations.push(heuristicRequirementRelation(requirement, ranked));
               continue;
             }
-            const status = normalizeStatus(item.status ?? "", "requirement_design");
+            const status = normalizeStatus(
+              item.status ?? "",
+              "requirement_design",
+            );
             let targetCodes = Array.isArray(item.targetCodes)
-              ? item.targetCodes.filter((c): c is string => typeof c === "string" && candidates.has(c))
+              ? item.targetCodes.filter(
+                (c): c is string =>
+                  typeof c === "string" && candidates.has(c),
+              )
               : [];
             if (!targetCodes.length && Array.isArray(item.matches)) {
               targetCodes = item.matches
                 .map((m) => m.designCode ?? m.code)
-                .filter((c): c is string => Boolean(c) && candidates.has(c as string)) as string[];
+                .filter(
+                  (c): c is string => Boolean(c) && candidates.has(c as string),
+                ) as string[];
             }
-            const finalStatus = status === "satisfied" && targetCodes.length === 0 ? "partial" : status;
-            const targetNames = targetCodes.map((code) => designByCode.get(code)?.name ?? code);
+            const finalStatus =
+              status === "satisfied" && targetCodes.length === 0
+                ? "partial"
+                : status;
+            const targetNames = targetCodes.map(
+              (code) => designByCode.get(code)?.name ?? code,
+            );
             relations.push(
               makeRelation({
                 level: "requirement_design",
@@ -421,13 +525,21 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
             );
             usedLlm = true;
           }
-          tick("requirement_design", `需求→设计：${Math.min(doneBatches, totalBatches)}/${totalBatches} 批`);
+          tick(
+            "requirement_design",
+            `需求→设计：${Math.min(doneBatches, totalBatches)}/${totalBatches} 批`,
+          );
         },
         signal,
       );
     } else {
       for (const requirement of filteredRequirements) {
-        relations.push(heuristicRequirementRelation(requirement, rankedByCode.get(requirement.code) ?? []));
+        relations.push(
+          heuristicRequirementRelation(
+            requirement,
+            rankedByCode.get(requirement.code) ?? [],
+          ),
+        );
       }
       doneBatches += reqBatches.length;
       onProgress(
@@ -441,8 +553,16 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
 
   // ---------- 设计 → 代码 ----------
   if (levels.includes("design_code") && snapshot) {
-    onProgress("design_code", doneBatches, Math.max(totalBatches, 1), `正在检索代码候选（${filteredDesign.length} 个设计单元）…`);
-    const rankedByCode = new Map<string, ReturnType<typeof rankCodeCandidates>>();
+    onProgress(
+      "design_code",
+      doneBatches,
+      Math.max(totalBatches, 1),
+      `正在检索代码候选（${filteredDesign.length} 个设计单元）…`,
+    );
+    const rankedByCode = new Map<
+      string,
+      ReturnType<typeof rankCodeCandidates>
+    >();
     for (const design of filteredDesign) {
       rankedByCode.set(design.code, rankCodeCandidates(design, symbolIndex, 7));
     }
@@ -474,7 +594,10 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
             const response = await client.chatJson<unknown>(
               [
                 { role: "system", content: CODE_SYSTEM },
-                { role: "user", content: `请评审以下设计单元与候选代码：\n${JSON.stringify(payload, null, 2)}` },
+                {
+                  role: "user",
+                  content: `请评审以下设计单元与候选代码：\n${JSON.stringify(payload, null, 2)}`,
+                },
               ],
               { temperature: 0.1, maxTokens: 4096, signal },
             );
@@ -484,7 +607,9 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
             }
           } catch (err) {
             if (signal?.aborted) throw new CancelledError();
-            addWarning(`设计→代码批次 ${batchIndex + 1} 调用失败，已回退启发式：${(err as Error).message}`);
+            addWarning(
+              `设计→代码批次 ${batchIndex + 1} 调用失败，已回退启发式：${(err as Error).message}`,
+            );
             judged = new Map();
           }
 
@@ -495,14 +620,19 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
               relations.push(heuristicDesignRelation(design, ranked));
               continue;
             }
-            const handles = Array.isArray(item.targetHandles) ? item.targetHandles : [];
+            const handles = Array.isArray(item.targetHandles)
+              ? item.targetHandles
+              : [];
             const targets: RankedSymbol[] = [];
             for (const handle of handles) {
               const idx = Number(String(handle).replace(/[^0-9]/g, "")) - 1;
               if (idx >= 0 && idx < ranked.length) targets.push(ranked[idx]);
             }
             const status = normalizeStatus(item.status ?? "", "design_code");
-            const finalStatus = status === "satisfied" && targets.length === 0 ? "partial" : status;
+            const finalStatus =
+              status === "satisfied" && targets.length === 0
+                ? "partial"
+                : status;
             relations.push(
               makeRelation({
                 level: "design_code",
@@ -511,7 +641,9 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
                 sourceType: design.type,
                 sourceSubsystem: design.subsystem,
                 targetCodes: targets.map((t) => t.symbol.id),
-                targetNames: targets.map((t) => `${t.symbol.file}:${t.symbol.line} ${t.symbol.name}`),
+                targetNames: targets.map(
+                  (t) => `${t.symbol.file}:${t.symbol.line} ${t.symbol.name}`,
+                ),
                 status: finalStatus,
                 confidence: confidenceOf(item.confidence, 0.6),
                 rationale: cleanText(item.rationale ?? "").slice(0, 800),
@@ -523,13 +655,18 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
             );
             usedLlm = true;
           }
-          tick("design_code", `设计→代码：${Math.min(doneBatches, totalBatches)}/${totalBatches} 批`);
+          tick(
+            "design_code",
+            `设计→代码：${Math.min(doneBatches, totalBatches)}/${totalBatches} 批`,
+          );
         },
         signal,
       );
     } else {
       for (const design of filteredDesign) {
-        relations.push(heuristicDesignRelation(design, rankedByCode.get(design.code) ?? []));
+        relations.push(
+          heuristicDesignRelation(design, rankedByCode.get(design.code) ?? []),
+        );
       }
       onProgress(
         "design_code",
@@ -542,10 +679,21 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
 
   if (signal?.aborted) throw new CancelledError();
   if (warningOverflow > 0) {
-    warnings.push(`另有 ${warningOverflow} 个批次调用失败并回退启发式，已省略重复提示。`);
+    warnings.push(
+      `另有 ${warningOverflow} 个批次调用失败并回退启发式，已省略重复提示。`,
+    );
   }
-  onProgress("summary", Math.max(totalBatches, 1), Math.max(totalBatches, 1), "正在汇总评价结果…");
-  const summary = computeSummary(relations, filteredDesign, filteredRequirements.length);
+  onProgress(
+    "summary",
+    Math.max(totalBatches, 1),
+    Math.max(totalBatches, 1),
+    "正在汇总评价结果…",
+  );
+  const summary = computeSummary(
+    relations,
+    filteredDesign,
+    filteredRequirements.length,
+  );
   return {
     relations,
     summary,

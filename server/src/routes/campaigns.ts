@@ -70,11 +70,10 @@ campaignsRouter.post("/projects/:projectId/campaigns", async (req, res) => {
     : [];
 
   const stamp = new Date();
-  const defaultName = `${levels.includes("requirement_design") ? "需求→设计" : ""}${
-    levels.length === 2 ? " + " : ""
-  }${levels.includes("design_code") ? "设计→代码" : ""} · ${String(stamp.getMonth() + 1).padStart(2, "0")}-${String(
-    stamp.getDate(),
-  ).padStart(2, "0")} ${String(stamp.getHours()).padStart(2, "0")}:${String(stamp.getMinutes()).padStart(2, "0")}`;
+  const defaultName = `${levels.includes("requirement_design") ? "需求→设计" : ""}${levels.length === 2 ? " + " : ""
+    }${levels.includes("design_code") ? "设计→代码" : ""} · ${String(stamp.getMonth() + 1).padStart(2, "0")}-${String(
+      stamp.getDate(),
+    ).padStart(2, "0")} ${String(stamp.getHours()).padStart(2, "0")}:${String(stamp.getMinutes()).padStart(2, "0")}`;
 
   const campaign: Campaign = {
     id: newId("cmp"),

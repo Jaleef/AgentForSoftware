@@ -19,16 +19,3 @@ export function buildOutline(headings: HeadingRef[]): OutlineNode[] {
   }
   return roots;
 }
-
-export function subsystemFromText(text: string): string {
-  if (/降水/.test(text)) return "降水仪";
-  if (/重力波/.test(text)) return "重力波仪";
-  if (/测云/.test(text)) return "测云仪";
-  if (/平台|集成|系统架构|总体/.test(text)) return "数字孪生平台";
-  return "";
-}
-
-export function normalizeSubsystem(value: string): string {
-  const v = subsystemFromText(value);
-  return v || "全局";
-}
