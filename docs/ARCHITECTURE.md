@@ -47,6 +47,7 @@ DOCX ──► ZIP/OOXML 解析 ──► 块序列（段落/表格）
 | `src/llm/client.ts` | OpenAI 兼容 Chat Completions、JSON 解析、重试、并发控制、连接测试 |
 | `src/llm/enrich.ts` | 需求/设计摘要、原子义务、关键词、类型分类 |
 | `src/services/documents.ts` | 上传落盘、解析、统计、重新拆分、后台 LLM 整理 |
+| `src/services/requirements.ts` | 手工新增/删除需求单元、`SRS-MAN-NNN` 编号、同步需求点 |
 | `src/services/projects.ts` | 项目聚合视图 |
 | `src/services/report.ts` | Markdown/CSV 报告生成 |
 | `src/store.ts` | JSON 文件存储、串行化写入、原子替换、设置脱敏 |

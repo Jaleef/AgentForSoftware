@@ -199,10 +199,14 @@ async function runEnrichmentInternal(docId: string): Promise<void> {
         );
         target.requirementPoints = result.points;
         target.subsystemTaxonomy = result.taxonomy;
-        target.requirements = result.units.map((unit) => {
-          const review = unit.pointId ? reviews.get(unit.pointId) : undefined;
-          return review ? { ...unit, ...review } : unit;
-        });
+        const manualUnits = target.requirements.filter((unit) => unit.origin === "manual");
+        target.requirements = [
+          ...result.units.map((unit) => {
+            const review = unit.pointId ? reviews.get(unit.pointId) : undefined;
+            return review ? { ...unit, ...review } : unit;
+          }),
+          ...manualUnits,
+        ];
         target.status = "parsed";
         target.updatedAt = nowIso();
         const baseWarnings = target.warnings.filter(
@@ -285,8 +289,10 @@ export async function reparseDocument(docId: string): Promise<StoredDocument | u
     target.stats = parsed.stats;
     target.warnings = parsed.warnings;
     if (parsed.kind === "srs") {
-      target.requirements = parsed.requirements;
+      const manualUnits = target.requirements.filter((unit) => unit.origin === "manual");
+      target.requirements = [...parsed.requirements, ...manualUnits];
       target.requirementPoints = parsed.requirementPoints;
+      recomputeRequirementStats(target);
     } else {
       target.designUnits = parsed.designUnits;
     }

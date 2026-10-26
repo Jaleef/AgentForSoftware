@@ -7,6 +7,7 @@ import type {
   ProjectSummary,
   Relation,
   RequirementType,
+  RequirementUnit,
   SettingsResponse,
   SnapshotMeta,
   StoredDocument,
@@ -67,6 +68,27 @@ export const api = {
     }).then((r) => r.document),
   enrichDocument: (projectId: string, docId: string) =>
     request<{ ok: boolean }>(`/projects/${projectId}/documents/${docId}/enrich`, { method: "POST" }),
+  createRequirement: (
+    projectId: string,
+    input: {
+      type?: RequirementType;
+      title?: string;
+      description: string;
+      detail?: string;
+      subsystem?: string;
+      testSpec?: string;
+      obligations?: string;
+      sourceId?: string;
+    },
+  ) =>
+    request<{ unit: RequirementUnit }>(`/projects/${projectId}/requirements`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }).then((r) => r.unit),
+  deleteRequirement: (projectId: string, code: string) =>
+    request<{ ok: boolean; deleted: RequirementUnit }>(`/projects/${projectId}/requirements/${code}`, {
+      method: "DELETE",
+    }),
   patchRequirement: (
     projectId: string,
     code: string,

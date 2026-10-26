@@ -11,10 +11,30 @@ import {
   Spinner,
   Tag,
 } from "../components/ui";
-import { IconFile, IconLink, IconSearch } from "../components/Icons";
+import { IconFile, IconLink, IconPlus, IconSearch, IconTrash, IconX } from "../components/Icons";
 import { groupBySubsystem, requirementTone, unitLocator } from "../utils";
 import type { RequirementType, RequirementUnit } from "../types";
 import { REQUIREMENT_TYPES } from "../types";
+
+interface ManualRequirementDraft {
+  type: RequirementType;
+  subsystem: string;
+  title: string;
+  description: string;
+  detail: string;
+  obligations: string;
+  sourceId: string;
+}
+
+const emptyManualDraft: ManualRequirementDraft = {
+  type: "功能需求",
+  subsystem: "全局",
+  title: "",
+  description: "",
+  detail: "",
+  obligations: "",
+  sourceId: "",
+};
 
 export function RequirementsPage() {
   const { projectId = "" } = useParams();
@@ -33,6 +53,11 @@ export function RequirementsPage() {
   const [reviewNote, setReviewNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [draft, setDraft] = useState<ManualRequirementDraft>(emptyManualDraft);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const units = doc?.requirements ?? [];
   const selected = units.find((unit) => unit.code === selectedCode) ?? units[0];
@@ -93,6 +118,65 @@ export function RequirementsPage() {
     }
   }
 
+  function openAdd() {
+    setDraft({ ...emptyManualDraft, subsystem: systems[0] ?? "全局" });
+    setAddError("");
+    setShowAdd(true);
+  }
+
+  function updateDraft(patch: Partial<ManualRequirementDraft>) {
+    setDraft((current) => ({ ...current, ...patch }));
+  }
+
+  async function submitAdd() {
+    if (!draft.description.trim()) {
+      setAddError("需求描述不能为空。");
+      return;
+    }
+    setAdding(true);
+    setAddError("");
+    try {
+      const unit = await api.createRequirement(projectId, {
+        type: draft.type,
+        title: draft.title.trim() || undefined,
+        description: draft.description.trim(),
+        detail: draft.detail.trim() || undefined,
+        subsystem: draft.subsystem.trim() || "全局",
+        obligations: draft.obligations,
+        sourceId: draft.sourceId.trim() || undefined,
+      });
+      setShowAdd(false);
+      setNotice(`已添加需求单元 ${unit.code}。`);
+      setSelectedCode(unit.code);
+      resource.reload();
+    } catch (err) {
+      setAddError((err as Error).message);
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function deleteSelected() {
+    if (!selected) return;
+    if (doc?.status === "enriching") {
+      setNotice("文档正在 LLM 整理，请完成后再删除需求单元。");
+      return;
+    }
+    if (!window.confirm(`确定删除需求单元 ${selected.code} 吗？删除后其需求点也会一并移除。`)) return;
+    setDeleting(true);
+    setNotice("");
+    try {
+      await api.deleteRequirement(projectId, selected.code);
+      setNotice(`已删除需求单元 ${selected.code}。`);
+      setSelectedCode(null);
+      resource.reload();
+    } catch (err) {
+      setNotice((err as Error).message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (resource.loading && !doc) {
     return (
       <div className="loading-block">
@@ -132,7 +216,9 @@ export function RequirementsPage() {
           <Spinner size={14} label="LLM 正在判断文本型需求点，并生成结构化需求单元…完成后自动刷新。" />
         </Notice>
       )}
-      {notice && <Notice tone={notice.includes("已保存") ? "green" : "red"}>{notice}</Notice>}
+      {notice && (
+        <Notice tone={/失败|错误|不能|不存在/.test(notice) ? "red" : "green"}>{notice}</Notice>
+      )}
       {doc.warnings.length > 0 && (
         <Notice tone="amber">
           {doc.warnings.slice(0, 4).map((warning, index) => (
@@ -169,6 +255,14 @@ export function RequirementsPage() {
           </div>
           <div className="stats-actions">
             <Button
+              variant="secondary"
+              icon={<IconPlus size={15} />}
+              onClick={openAdd}
+              disabled={doc.status === "enriching"}
+            >
+              添加需求单元
+            </Button>
+            <Button
               variant="primary"
               icon={<IconLink size={15} />}
               onClick={() => navigate(`/projects/${projectId}/evaluation`)}
@@ -184,6 +278,7 @@ export function RequirementsPage() {
               <option value="全部">全部</option>
               <option value="rule">规则解析（需求表）</option>
               <option value="llm">LLM 解析（文本章节）</option>
+              <option value="manual">手工添加</option>
             </select>
           </label>
           <label className="filter">
@@ -290,15 +385,137 @@ export function RequirementsPage() {
               reviewType={reviewType}
               reviewNote={reviewNote}
               saving={saving}
+              deleting={deleting}
+              canDelete={doc.status !== "enriching"}
               onType={setReviewType}
               onNote={setReviewNote}
               onSave={saveReview}
+              onDelete={deleteSelected}
             />
           ) : (
             <EmptyState compact title="选择一条需求" description="左侧列表中的需求单元会显示在这里。" />
           )}
         </Card>
       </div>
+
+      {showAdd && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowAdd(false);
+          }}
+        >
+          <div className="modal" role="dialog" aria-modal="true" aria-label="添加需求单元">
+            <div className="modal-head">
+              <div>
+                <h3>添加需求单元</h3>
+                <p className="muted small">手工添加的单元会以 SRS-MAN 编号保存，并在 LLM 重新整理后保留。</p>
+              </div>
+              <button className="icon-btn" type="button" onClick={() => setShowAdd(false)} aria-label="关闭">
+                <IconX size={18} />
+              </button>
+            </div>
+            <form
+              className="modal-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitAdd();
+              }}
+            >
+              <div className="form-grid-2">
+                <label className="field">
+                  <span>需求类型</span>
+                  <select
+                    value={draft.type}
+                    onChange={(event) => updateDraft({ type: event.target.value as RequirementType })}
+                  >
+                    {REQUIREMENT_TYPES.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>子系统</span>
+                  <input
+                    list="manual-subsystems"
+                    value={draft.subsystem}
+                    onChange={(event) => updateDraft({ subsystem: event.target.value })}
+                    placeholder="例如：数字孪生平台"
+                  />
+                  <datalist id="manual-subsystems">
+                    {systems.map((item) => (
+                      <option key={item} value={item} />
+                    ))}
+                  </datalist>
+                </label>
+              </div>
+
+              <label className="field">
+                <span>标题（可选）</span>
+                <input
+                  value={draft.title}
+                  onChange={(event) => updateDraft({ title: event.target.value })}
+                  placeholder="留空则从需求描述生成"
+                />
+              </label>
+
+              <label className="field">
+                <span>需求描述 *</span>
+                <textarea
+                  rows={3}
+                  value={draft.description}
+                  onChange={(event) => updateDraft({ description: event.target.value })}
+                  placeholder="输入需求原文或人工整理后的需求描述"
+                  autoFocus
+                />
+              </label>
+
+              <label className="field">
+                <span>需求说明（可选）</span>
+                <textarea
+                  rows={2}
+                  value={draft.detail}
+                  onChange={(event) => updateDraft({ detail: event.target.value })}
+                  placeholder="补充输入、处理规则、约束等"
+                />
+              </label>
+
+              <label className="field">
+                <span>原子义务（可选，每行一条）</span>
+                <textarea
+                  rows={3}
+                  value={draft.obligations}
+                  onChange={(event) => updateDraft({ obligations: event.target.value })}
+                  placeholder="留空则从需求描述和需求说明自动切分"
+                />
+              </label>
+
+              <label className="field">
+                <span>源文档 ID（可选）</span>
+                <input
+                  value={draft.sourceId}
+                  onChange={(event) => updateDraft({ sourceId: event.target.value })}
+                  placeholder="例如：DT_REQ_0099"
+                />
+              </label>
+
+              {addError && <Notice tone="red">{addError}</Notice>}
+
+              <div className="modal-actions">
+                <Button type="button" variant="ghost" onClick={() => setShowAdd(false)}>
+                  取消
+                </Button>
+                <Button type="submit" variant="primary" disabled={adding}>
+                  {adding ? "添加中…" : "添加需求单元"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -309,18 +526,24 @@ function RequirementDetail({
   reviewType,
   reviewNote,
   saving,
+  deleting,
+  canDelete,
   onType,
   onNote,
   onSave,
+  onDelete,
 }: {
   unit: RequirementUnit;
   projectId: string;
   reviewType: RequirementType;
   reviewNote: string;
   saving: boolean;
+  deleting: boolean;
+  canDelete: boolean;
   onType: (value: RequirementType) => void;
   onNote: (value: string) => void;
   onSave: () => void;
+  onDelete: () => void;
 }) {
   return (
     <div className="detail-inner">
@@ -362,13 +585,31 @@ function RequirementDetail({
         <MetaItem label="父需求 ID" value={unit.parentSourceId || "—"} muted={!unit.parentSourceId} />
         <MetaItem label="子系统" value={unit.subsystem} />
         <MetaItem label="来源章节（仅追溯）" value={unit.chapter} wide />
-        <MetaItem label="定位" value={`${unitLocator(unit)}（按渲染分页估算）`} />
+        <MetaItem
+          label="定位"
+          value={unit.location.page ? `${unitLocator(unit)}（按渲染分页估算）` : "手工添加"}
+        />
         <MetaItem label="置信度" value={percent(unit.confidence * 100)} />
-        <MetaItem label="解析来源" value={unit.origin === "llm" ? "LLM 判定文本需求点" : "需求表规则解析"} />
+        <MetaItem
+          label="解析来源"
+          value={
+            unit.origin === "manual"
+              ? "人工添加"
+              : unit.origin === "llm"
+                ? "LLM 判定文本需求点"
+                : "需求表规则解析"
+          }
+        />
         <MetaItem
           label="单元生成"
           value={
-            unit.structureOrigin === "rule" ? "规则回退" : unit.structureOrigin === "llm" ? "LLM 生成" : "未记录"
+            unit.structureOrigin === "manual"
+              ? "手工添加"
+              : unit.structureOrigin === "rule"
+                ? "规则回退"
+                : unit.structureOrigin === "llm"
+                  ? "LLM 生成"
+                  : "未记录"
           }
         />
       </div>
@@ -399,6 +640,18 @@ function RequirementDetail({
         <Button variant="primary" onClick={onSave} disabled={saving}>
           {saving ? "保存中…" : "保存需求类型"}
         </Button>
+      </div>
+
+      <div className="detail-actions">
+        <Button
+          variant="danger"
+          icon={<IconTrash size={15} />}
+          onClick={onDelete}
+          disabled={deleting || !canDelete}
+        >
+          {deleting ? "删除中…" : canDelete ? "删除需求单元" : "LLM 整理中…"}
+        </Button>
+        <span className="muted small">删除后会同步移除对应需求点，后续 LLM 整理不会重新生成。</span>
       </div>
     </div>
   );

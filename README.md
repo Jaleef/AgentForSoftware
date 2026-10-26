@@ -56,7 +56,7 @@
 | 页面 | 能力 |
 | --- | --- |
 | 项目与资料 | 创建项目；上传 SRS/SDD DOCX；重新拆分；LLM 整理；撤销导入；登记代码快照；评价历史 |
-| 需求结构 | 统计、章节/子系统/类型筛选、搜索、分组树、需求原文、原子义务、页码行号、人工审核类型 |
+| 需求结构 | 统计、解析来源/子系统/类型筛选、搜索、分组树、需求原文、原子义务、页码行号、手工新增/删除、人工审核类型 |
 | 设计结构 | 模块/子功能/数据表/页面四类单元；树视图与卡片视图；设计义务、接口、输入输出、字段表、审核 |
 | 代码结构 | 快照登记、语言与符号统计、目录树、文件符号明细与代码片段 |
 | 一致性评价 | 创建任务、层级/子系统范围、实时进度、得分与覆盖率、分子系统得分、逐条判定、证据/缺口/建议、人工确认/驳回 |
@@ -263,6 +263,8 @@ node scripts/mock-llm.mjs   # http://127.0.0.1:8899/v1，任意 API Key
 | GET | `/api/projects/:id/documents/:kind` | 获取完整解析结果 |
 | POST | `/api/projects/:id/documents/:docId/reparse` | 重新拆分 |
 | POST | `/api/projects/:id/documents/:docId/enrich` | LLM 判定文本需求点并生成需求单元 |
+| POST | `/api/projects/:id/requirements` | 手工新增需求单元（`SRS-MAN-NNN`） |
+| DELETE | `/api/projects/:id/requirements/:code` | 删除需求单元（同时移除对应需求点） |
 | PATCH | `/api/projects/:id/requirements/:code` | 人工审核需求类型与备注 |
 | POST | `/api/projects/:id/snapshots` | 登记代码快照（`rootPath`、`commit`） |
 | GET | `/api/projects/:id/snapshots/:sid/file?path=` | 读取快照中的文件符号 |

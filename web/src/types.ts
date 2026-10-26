@@ -67,8 +67,8 @@ export type RequirementType =
 export interface RequirementUnit {
   code: string;
   pointId?: string;
-  sourceKind?: "table" | "text";
-  structureOrigin?: "rule" | "llm";
+  sourceKind?: "table" | "text" | "manual";
+  structureOrigin?: "rule" | "llm" | "manual";
   sourceId: string;
   parentSourceId: string;
   type: RequirementType;
@@ -78,9 +78,10 @@ export interface RequirementUnit {
   detail: string;
   testSpec: string;
   chapter: string;
+  chapterPath?: string[];
   location: SourceLocation;
   confidence: number;
-  origin: "rule" | "llm";
+  origin: "rule" | "llm" | "manual";
   summary: string;
   obligations: string[];
   keywords: string[];

@@ -35,6 +35,7 @@ export function levelLabel(level: string): string {
 }
 
 export function unitLocator(unit: RequirementUnit | DesignUnit): string {
+  if (!unit.location.page) return "手工添加";
   return `第 ${unit.location.page} 页 · 第 ${unit.location.line} 行`;
 }
 

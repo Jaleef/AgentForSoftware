@@ -34,6 +34,7 @@
 - `obligations`：LLM 生成的原子义务。
 - `chapter / chapterPath / location`：带编号的章节路径、页码、行号（追溯用；不参与类型判断）。
 - `origin / confidence`：继承需求点来源与置信度（表格为规则/100%，文本为 LLM 判定置信度）。
+- 手工新增的需求单元使用 `origin=manual`、`code=SRS-MAN-NNN`、置信度 100%，并在 LLM 重新整理后保留；删除生成单元时会同步移除其需求点，避免后续 LLM 整理重新生成。
 
 ### 2.3 设计单元
 

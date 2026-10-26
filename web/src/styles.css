@@ -665,6 +665,76 @@ p {
   grid-template-columns: repeat(4, minmax(120px, 1fr));
 }
 
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.modal {
+  width: min(680px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 20px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.modal-head h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.modal-head p {
+  margin: 0;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+@media (max-width: 640px) {
+  .modal-backdrop {
+    padding: 12px;
+    align-items: flex-start;
+  }
+
+  .form-grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
 .field {
   display: flex;
   flex-direction: column;
