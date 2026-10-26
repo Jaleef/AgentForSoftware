@@ -1,0 +1,137 @@
+import type { RequirementPoint, SubsystemCategory } from "../types.js";
+import type { LlmClient } from "./client.js";
+import { cleanText } from "../util/text.js";
+
+export interface TaxonomyResult {
+  categories: SubsystemCategory[];
+  /** chapterPath (joined with " / ") -> category name */
+  mapping: Map<string, string>;
+  warnings: string[];
+  usedLlm: boolean;
+}
+
+interface ChapterStat {
+  chapterPath: string[];
+  count: number;
+  samples: string[];
+}
+
+interface TaxonomyPayload {
+  categories?: Array<{ name?: string; description?: string }>;
+  assignments?: Array<{ chapterPath?: string; chapter?: string; category?: string }>;
+}
+
+const TAXONOMY_SYSTEM = `你是资深需求架构师。下面是从一份软件需求文档中统计出的章节路径（含编号）、需求点数量和样例标题。
+任务：把这些章节归纳为少量、概括、稳定的“子系统/范围类别”，并为每个章节路径分配一个类别。
+规则：
+1. 类别数量控制在 3-8 个；内容确实复杂时最多 10 个。
+2. 类别名要概括，例如“数字孪生平台”“降水仪”“重力波仪”“测云仪”“全局/其他”；不要把“数据库同步”“用户信息管理”“故障检测”等具体功能名当作子系统。
+3. 优先按产品/平台/仪器/业务域划分，而不是按文档目录逐节划分。
+4. 每个输入章节路径必须且只能分配到一个类别。
+5. 类别名保持稳定、简短（不超过 20 个汉字）。
+只输出 JSON：
+{"categories":[{"name":"数字孪生平台","description":"..."}],"assignments":[{"chapterPath":"3 需求分析 / 3.3 功能需求 / 3.3.1 ...","category":"数字孪生平台"}]}`;
+
+function pointChapterPath(point: RequirementPoint): string[] {
+  if (point.chapterPath?.length) return point.chapterPath;
+  return point.chapter ? point.chapter.split(" / ").filter(Boolean) : ["未分类"];
+}
+
+export async function generateSubsystemTaxonomy(
+  points: RequirementPoint[],
+  client: LlmClient,
+): Promise<TaxonomyResult> {
+  const accepted = points.filter((point) => point.judged && point.accepted);
+  const stats = new Map<string, ChapterStat>();
+  for (const point of accepted) {
+    const chapterPath = pointChapterPath(point);
+    const key = chapterPath.join(" / ");
+    const current = stats.get(key) ?? { chapterPath, count: 0, samples: [] };
+    current.count++;
+    const sample = (point.description || point.text || "").slice(0, 60);
+    if (sample && current.samples.length < 2) current.samples.push(sample);
+    stats.set(key, current);
+  }
+
+  const warnings: string[] = [];
+  const chapters = [...stats.values()].sort((a, b) => b.count - a.count);
+  if (!chapters.length) return { categories: [], mapping: new Map(), warnings, usedLlm: false };
+
+  // Keep the prompt bounded for very large documents. Unmapped paths fall back to 全局.
+  const limited = chapters.slice(0, 120);
+  if (chapters.length > limited.length) {
+    warnings.push(`章节数量较多，仅提交前 ${limited.length} 个章节用于子系统归纳；其余需求归入全局。`);
+  }
+
+  try {
+    const payload = limited.map((chapter) => ({
+      chapterPath: chapter.chapterPath.join(" / "),
+      count: chapter.count,
+      samples: chapter.samples,
+    }));
+    const response = await client.chatJson<TaxonomyPayload>(
+      [
+        { role: "system", content: TAXONOMY_SYSTEM },
+        { role: "user", content: `章节统计：\n${JSON.stringify(payload, null, 2)}` },
+      ],
+      { temperature: 0.1, maxTokens: 8192 },
+    );
+
+    const rawCategories = Array.isArray(response.categories) ? response.categories : [];
+    let names: string[] = [];
+    for (const category of rawCategories) {
+      const name = cleanText(category.name || "").slice(0, 40);
+      if (name && !names.includes(name)) names.push(name);
+    }
+    if (names.length > 10) {
+      warnings.push(`LLM 返回了 ${names.length} 个子系统类别，已截断为前 10 个。`);
+      names = names.slice(0, 10);
+    }
+    if (!names.length) {
+      warnings.push("LLM 未返回有效的子系统类别，需求单元将归入全局。");
+      return { categories: [], mapping: new Map(), warnings, usedLlm: false };
+    }
+
+    const allowed = new Set(names);
+    const mapping = new Map<string, string>();
+    const chapterPaths = new Map<string, string[]>();
+    const rawAssignments = Array.isArray(response.assignments) ? response.assignments : [];
+    for (const assignment of rawAssignments) {
+      const chapterPath = cleanText(assignment.chapterPath || assignment.chapter || "");
+      const category = cleanText(assignment.category || "");
+      if (!chapterPath || !allowed.has(category)) continue;
+      // Only accept chapter paths that were actually supplied.
+      if (!stats.has(chapterPath)) continue;
+      mapping.set(chapterPath, category);
+      const paths = chapterPaths.get(category) ?? [];
+      paths.push(chapterPath);
+      chapterPaths.set(category, paths);
+    }
+
+    const categories: SubsystemCategory[] = names.map((name) => ({
+      name,
+      description: cleanText(rawCategories.find((category) => cleanText(category.name || "") === name)?.description || ""),
+      chapterPaths: chapterPaths.get(name) ?? [],
+    }));
+
+    const missing = chapters.filter((chapter) => !mapping.has(chapter.chapterPath.join(" / "))).length;
+    if (missing > 0) warnings.push(`${missing} 个章节未被 LLM 分配到子系统类别，相关需求将归入全局。`);
+
+    return { categories, mapping, warnings, usedLlm: mapping.size > 0 };
+  } catch (err) {
+    warnings.push(`子系统分类生成失败：${(err as Error).message}`);
+    return { categories: [], mapping: new Map(), warnings, usedLlm: false };
+  }
+}
+
+/** Map a point to the taxonomy category, with parent-prefix fallback. */
+export function taxonomyCategoryFor(point: RequirementPoint, mapping: Map<string, string>): string {
+  if (!mapping.size) return "全局";
+  const path = pointChapterPath(point);
+  for (let length = path.length; length > 0; length--) {
+    const key = path.slice(0, length).join(" / ");
+    const category = mapping.get(key);
+    if (category) return category;
+  }
+  return "全局";
+}

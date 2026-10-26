@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { join } from "node:path";
 import type { DocumentKind, DocumentStats, ParsedDocument, StoredDocument } from "../types.js";
 import { parseDocxBuffer } from "../parsers/docx.js";
-import { parseRequirements } from "../parsers/requirements.js";
+import { parseRequirements, extractRequirementPoints } from "../parsers/requirements.js";
 import { parseDesign } from "../parsers/design.js";
-import { enrichDocument } from "../llm/enrich.js";
+import { enrichDesign } from "../llm/enrich.js";
+import { runRequirementAgent } from "../llm/requirements.js";
 import { LlmClient } from "../llm/client.js";
 import {
   ensureProjectDir,
@@ -48,12 +49,16 @@ export function recomputeRequirementStats(doc: StoredDocument): void {
   if (doc.kind !== "srs") return;
   const byType: Record<string, number> = {};
   const bySubsystem: Record<string, number> = {};
+  const byChapter: Record<string, number> = {};
   for (const r of doc.requirements) {
     byType[r.type] = (byType[r.type] ?? 0) + 1;
     bySubsystem[r.subsystem] = (bySubsystem[r.subsystem] ?? 0) + 1;
+    const chapter = r.chapter.split(" / ").slice(-1)[0] || "未分类";
+    byChapter[chapter] = (byChapter[chapter] ?? 0) + 1;
   }
   doc.stats.byType = byType;
   doc.stats.bySubsystem = bySubsystem;
+  doc.stats.byChapter = byChapter;
   doc.stats.total = doc.requirements.length;
 }
 
@@ -103,6 +108,7 @@ export async function saveParsedDocument(options: SaveParsedOptions): Promise<St
     useLlm: options.useLlm,
     pageCount: parsed.pageCount,
     requirements: parsed.kind === "srs" ? parsed.requirements : [],
+    requirementPoints: parsed.kind === "srs" ? parsed.requirementPoints : [],
     designUnits: parsed.kind === "sdd" ? parsed.designUnits : [],
     outline: parsed.outline,
     stats: parsed.stats,
@@ -168,39 +174,84 @@ async function runEnrichmentInternal(docId: string): Promise<void> {
     });
     return;
   }
-  const clone: StoredDocument = {
-    ...doc,
-    requirements: structuredClone(doc.requirements),
-    designUnits: structuredClone(doc.designUnits),
-  };
+  const client = new LlmClient(settings);
+  const concurrency = Math.max(1, Math.min(settings.concurrency, 4));
+
   try {
-    const client = new LlmClient(settings);
-    const result = await enrichDocument(clone, client, Math.max(1, Math.min(settings.concurrency, 4)));
+    // Fail fast before sending dozens of batches to a misconfigured endpoint.
+    await client.testConnection();
+    if (doc.kind === "srs") {
+      // Requirement pipeline: table points + LLM text judgement + LLM unit generation.
+      let points = doc.requirementPoints ?? [];
+      if (!points.length) {
+        const extracted = extractRequirementPoints(parseDocxBuffer(readFileSync(resolveStoredPath(doc))));
+        points = extracted.points;
+      }
+      if (!points.length) throw new Error("未解析到需求点，请先执行「重新拆分」后再让 LLM 生成需求单元。");
+      const result = await runRequirementAgent(doc.id, structuredClone(points), client, concurrency);
+      await mutateStore((data) => {
+        const target = data.documents.find((d) => d.id === docId);
+        if (!target) return;
+        const reviews = new Map(
+          target.requirements
+            .filter((unit) => unit.pointId && (unit.reviewStatus === "confirmed" || unit.reviewNote))
+            .map((unit) => [unit.pointId as string, { reviewStatus: unit.reviewStatus, reviewNote: unit.reviewNote }]),
+        );
+        target.requirementPoints = result.points;
+        target.subsystemTaxonomy = result.taxonomy;
+        target.requirements = result.units.map((unit) => {
+          const review = unit.pointId ? reviews.get(unit.pointId) : undefined;
+          return review ? { ...unit, ...review } : unit;
+        });
+        target.status = "parsed";
+        target.updatedAt = nowIso();
+        const baseWarnings = target.warnings.filter(
+          (warning) =>
+            !warning.includes("文本型候选需求点") &&
+            !warning.includes("规则解析需求点") &&
+            !warning.includes("勾选了 LLM") &&
+            !warning.startsWith("LLM 已") &&
+            !warning.startsWith("LLM 整理") &&
+            !warning.startsWith("LLM 未能") &&
+            !warning.startsWith("LLM 解析失败") &&
+            !warning.startsWith("文本型需求点") &&
+            !warning.startsWith("文本需求点判定失败") &&
+            !warning.startsWith("需求单元生成失败"),
+        );
+        target.warnings = [
+          ...baseWarnings,
+          `规则解析需求点 ${result.tablePoints} 个（需求表，置信度 100%）；文本候选 ${result.textPoints} 个，LLM 判定为需求 ${result.acceptedTextPoints} 个；归纳子系统类别 ${result.taxonomy.length} 个；生成需求单元 ${result.units.length} 个。`,
+          ...result.warnings,
+        ];
+        recomputeRequirementStats(target);
+      });
+      return;
+    }
+
+    const clone: StoredDocument = {
+      ...doc,
+      designUnits: structuredClone(doc.designUnits),
+    };
+    const result = await enrichDesign(clone.designUnits, client, concurrency);
     await mutateStore((data) => {
       const target = data.documents.find((d) => d.id === docId);
       if (!target) return;
-      // Preserve human review decisions made while the LLM was working.
       const reviews = new Map(
-        [...target.requirements, ...target.designUnits]
+        target.designUnits
           .filter((unit) => unit.reviewStatus === "confirmed" || unit.reviewNote)
           .map((unit) => [unit.code, { reviewStatus: unit.reviewStatus, reviewNote: unit.reviewNote }]),
       );
-      const applyReview = <T extends { code: string; reviewStatus: "pending" | "confirmed"; reviewNote: string }>(unit: T): T => {
+      target.designUnits = clone.designUnits.map((unit) => {
         const review = reviews.get(unit.code);
-        if (!review) return unit;
-        return { ...unit, reviewStatus: review.reviewStatus, reviewNote: review.reviewNote };
-      };
-      target.requirements = clone.requirements.map(applyReview);
-      target.designUnits = clone.designUnits.map(applyReview);
+        return review ? { ...unit, ...review } : unit;
+      });
       target.status = "parsed";
       target.updatedAt = nowIso();
       target.warnings = [
-        ...target.warnings.filter((w) => !w.startsWith("LLM 整理")),
-        ...(result.updated > 0 ? [`LLM 已整理 ${result.updated} 个单元（摘要/义务/分类）。`] : []),
-        ...result.warnings.map((w) => `LLM 整理未完全成功：${w}`),
+        ...target.warnings.filter((warning) => !warning.startsWith("LLM 整理")),
+        ...(result.updated > 0 ? [`LLM 已整理 ${result.updated} 个设计单元（摘要/义务）。`] : []),
+        ...result.warnings.map((warning) => `LLM 整理未完全成功：${warning}`),
       ];
-      target.stats.total = target.kind === "srs" ? target.requirements.length : target.designUnits.length;
-      recomputeRequirementStats(target);
       recomputeDesignStats(target);
     });
   } catch (err) {
@@ -209,7 +260,7 @@ async function runEnrichmentInternal(docId: string): Promise<void> {
       if (!target) return;
       target.status = "parsed";
       target.updatedAt = nowIso();
-      target.warnings = [...target.warnings, `LLM 整理失败，已保留规则拆分结果：${(err as Error).message}`];
+      target.warnings = [...target.warnings, `LLM 解析失败，已保留规则拆分结果：${(err as Error).message}`];
     });
   }
 }
@@ -233,8 +284,12 @@ export async function reparseDocument(docId: string): Promise<StoredDocument | u
     target.outline = parsed.outline;
     target.stats = parsed.stats;
     target.warnings = parsed.warnings;
-    if (parsed.kind === "srs") target.requirements = parsed.requirements;
-    else target.designUnits = parsed.designUnits;
+    if (parsed.kind === "srs") {
+      target.requirements = parsed.requirements;
+      target.requirementPoints = parsed.requirementPoints;
+    } else {
+      target.designUnits = parsed.designUnits;
+    }
     return target;
   });
 }
@@ -257,6 +312,7 @@ export function documentSummary(doc: StoredDocument) {
     stats: doc.stats,
     warnings: doc.warnings,
     requirementCount: doc.requirements.length,
+    requirementPointCount: (doc.requirementPoints ?? []).length,
     designCount: doc.designUnits.length,
   };
 }

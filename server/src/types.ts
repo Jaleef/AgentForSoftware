@@ -38,8 +38,36 @@ export interface SourceLocation {
   line: number;
 }
 
+/**
+ * A raw requirement point before the LLM turns it into a structured requirement unit.
+ * Table points come from the document structure and are trusted 100%.
+ * Text points are only candidates until the LLM judges them.
+ */
+export interface RequirementPoint {
+  id: string;
+  kind: "table" | "text";
+  origin: "rule" | "llm";
+  confidence: number;
+  chapter: string;
+  /** Numbered heading levels, e.g. ["3 需求分析", "3.3 功能需求", "3.3.1 ..."]. */
+  chapterPath: string[];
+  location: SourceLocation;
+  sourceId: string;
+  parentSourceId: string;
+  description: string;
+  detail: string;
+  testSpec: string;
+  text: string;
+  judged: boolean;
+  accepted: boolean;
+  reason: string;
+}
+
 export interface RequirementUnit {
   code: string;
+  pointId?: string;
+  sourceKind?: "table" | "text";
+  structureOrigin?: "rule" | "llm";
   sourceId: string;
   parentSourceId: string;
   type: RequirementType;
@@ -49,6 +77,7 @@ export interface RequirementUnit {
   detail: string;
   testSpec: string;
   chapter: string;
+  chapterPath?: string[];
   location: SourceLocation;
   confidence: number;
   origin: "rule" | "llm";
@@ -57,6 +86,13 @@ export interface RequirementUnit {
   keywords: string[];
   reviewStatus: "pending" | "confirmed";
   reviewNote: string;
+}
+
+/** A compact subsystem taxonomy generated from chapter statistics. */
+export interface SubsystemCategory {
+  name: string;
+  description: string;
+  chapterPaths: string[];
 }
 
 export interface DbField {
@@ -103,6 +139,7 @@ export interface ParsedRequirements {
   kind: "srs";
   pageCount: number;
   requirements: RequirementUnit[];
+  requirementPoints: RequirementPoint[];
   outline: OutlineNode[];
   stats: DocumentStats;
   warnings: string[];
@@ -145,6 +182,10 @@ export interface StoredDocument {
   error?: string;
   pageCount: number;
   requirements: RequirementUnit[];
+  /** Raw points are kept so the LLM pipeline can be re-run without re-uploading. */
+  requirementPoints?: RequirementPoint[];
+  /** LLM-generated, compact subsystem taxonomy used by requirement units. */
+  subsystemTaxonomy?: SubsystemCategory[];
   designUnits: DesignUnit[];
   outline: OutlineNode[];
   stats: DocumentStats;

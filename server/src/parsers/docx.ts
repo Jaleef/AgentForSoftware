@@ -319,6 +319,11 @@ export function tableRows(table: DocxTable): string[][] {
   return table.rows.map((row) => expandedRow(row).texts);
 }
 
+function normalizeLabel(text: string): string {
+  // Word tables often render labels as "需求 ID" / "父需求 ID"; normalize internal spaces.
+  return text.trim().replace(/\s+/g, "");
+}
+
 /** Extract label/value pairs from definition-style tables (e.g. 需求ID | value | 父需求ID | value). */
 export function tablePairs(table: DocxTable): Array<{ label: string; value: string }> {
   const pairs: Array<{ label: string; value: string }> = [];
@@ -334,10 +339,10 @@ export function tablePairs(table: DocxTable): Array<{ label: string; value: stri
         const idx = labels[k];
         const nextLabel = k + 1 < labels.length ? labels[k + 1] : expanded.texts.length;
         const valueParts = expanded.texts.slice(idx + 1, nextLabel).filter((v) => v.trim());
-        pairs.push({ label: expanded.texts[idx].trim(), value: valueParts.join("；").trim() });
+        pairs.push({ label: normalizeLabel(expanded.texts[idx]), value: valueParts.join("；").trim() });
       }
     } else if (expanded.texts.length >= 2) {
-      const label = expanded.texts[0].trim();
+      const label = normalizeLabel(expanded.texts[0]);
       const value = expanded.texts.slice(1).filter(Boolean).join("\n").trim();
       if (label) pairs.push({ label, value });
     }
@@ -346,7 +351,7 @@ export function tablePairs(table: DocxTable): Array<{ label: string; value: stri
 }
 
 export function isLikelyLabel(text: string): boolean {
-  const t = text.trim();
+  const t = normalizeLabel(text);
   if (!t || t.length > 16) return false;
   return /^(需求ID|父需求ID|需求描述|需求说明|测试规程|模块编号|子功能编号|模块名称|功能名称|功能描述|接口|输入|输出|编号|字段名称|字段含义|字段类型|字段长度|是否主键|默认值|说明|备注)$/.test(
     t,

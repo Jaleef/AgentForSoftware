@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, percent } from "../api";
-import { useDebounced, useResource } from "../hooks";
+import { useDebounced, useInterval, useResource } from "../hooks";
 import {
   Button,
   Card,
@@ -22,7 +22,7 @@ export function RequirementsPage() {
   const resource = useResource(() => api.getDocument(projectId, "srs"), [projectId]);
   const doc = resource.data;
 
-  const [chapter, setChapter] = useState("全部");
+  const [origin, setOrigin] = useState("全部");
   const [subsystem, setSubsystem] = useState("全部");
   const [type, setType] = useState("全部");
   const [search, setSearch] = useState("");
@@ -48,14 +48,20 @@ export function RequirementsPage() {
     }
   }, [selected?.code]);
 
-  const chapters = useMemo(() => Object.keys(doc?.stats.byChapter ?? {}), [doc]);
+  useInterval(
+    () => {
+      resource.reload();
+    },
+    doc?.status === "enriching" ? 2500 : null,
+  );
+
   const systems = useMemo(() => Object.keys(doc?.stats.bySubsystem ?? {}), [doc]);
   const types = useMemo(() => Object.keys(doc?.stats.byType ?? {}), [doc]);
 
   const filtered = useMemo(() => {
     const keyword = debouncedSearch.trim().toLowerCase();
     return units.filter((unit) => {
-      if (chapter !== "全部" && unit.chapter.split(" / ")[1] !== chapter) return false;
+      if (origin !== "全部" && unit.origin !== origin) return false;
       if (subsystem !== "全部" && unit.subsystem !== subsystem) return false;
       if (type !== "全部" && unit.type !== type) return false;
       if (keyword) {
@@ -64,7 +70,7 @@ export function RequirementsPage() {
       }
       return true;
     });
-  }, [units, chapter, subsystem, type, debouncedSearch]);
+  }, [units, origin, subsystem, type, debouncedSearch]);
 
   const groups = useMemo(() => groupBySubsystem(filtered), [filtered]);
 
@@ -98,7 +104,7 @@ export function RequirementsPage() {
   if (!doc) {
     return (
       <>
-        <PageHeader title="需求结构" subtitle="需求拆分、义务与结构标记" />
+        <PageHeader title="需求结构" subtitle="需求表规则解析 · 文本章节 LLM 判定 · LLM 生成需求单元" />
         <Card>
           <EmptyState
             icon={<IconFile size={30} />}
@@ -119,15 +125,31 @@ export function RequirementsPage() {
 
   return (
     <>
-      <PageHeader title="需求结构" subtitle="需求拆分、义务与结构标记" />
+      <PageHeader title="需求结构" subtitle="需求表规则解析 · 文本章节 LLM 判定 · LLM 生成需求单元" />
 
+      {doc.status === "enriching" && (
+        <Notice tone="blue">
+          <Spinner size={14} label="LLM 正在判断文本型需求点，并生成结构化需求单元…完成后自动刷新。" />
+        </Notice>
+      )}
       {notice && <Notice tone={notice.includes("已保存") ? "green" : "red"}>{notice}</Notice>}
+      {doc.warnings.length > 0 && (
+        <Notice tone="amber">
+          {doc.warnings.slice(0, 4).map((warning, index) => (
+            <div key={index}>{warning}</div>
+          ))}
+        </Notice>
+      )}
 
       <Card className="stats-card">
         <div className="stats-row">
           <div className="stat headline">
             <div className="stat-value">{units.length}</div>
             <div className="stat-label">需求单元</div>
+          </div>
+          <div className="stat">
+            <div className="stat-value small-value">{doc.requirementPoints?.length ?? 0}</div>
+            <div className="stat-label">需求点（含候选）</div>
           </div>
           <div className="stat">
             <div className="stat-value small-value">{doc.version}</div>
@@ -157,14 +179,11 @@ export function RequirementsPage() {
         </div>
         <div className="filter-row">
           <label className="filter">
-            <span>需求章节</span>
-            <select value={chapter} onChange={(event) => setChapter(event.target.value)}>
+            <span>解析来源</span>
+            <select value={origin} onChange={(event) => setOrigin(event.target.value)}>
               <option value="全部">全部</option>
-              {chapters.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
+              <option value="rule">规则解析（需求表）</option>
+              <option value="llm">LLM 解析（文本章节）</option>
             </select>
           </label>
           <label className="filter">
@@ -342,10 +361,16 @@ function RequirementDetail({
         <MetaItem label="源文档 ID" value={unit.sourceId || "源文档未填写"} muted={!unit.sourceId} />
         <MetaItem label="父需求 ID" value={unit.parentSourceId || "—"} muted={!unit.parentSourceId} />
         <MetaItem label="子系统" value={unit.subsystem} />
-        <MetaItem label="章节" value={unit.chapter} wide />
+        <MetaItem label="来源章节（仅追溯）" value={unit.chapter} wide />
         <MetaItem label="定位" value={`${unitLocator(unit)}（按渲染分页估算）`} />
         <MetaItem label="置信度" value={percent(unit.confidence * 100)} />
-        <MetaItem label="类型来源" value={unit.origin === "llm" ? "LLM 标注" : "规则解析"} />
+        <MetaItem label="解析来源" value={unit.origin === "llm" ? "LLM 判定文本需求点" : "需求表规则解析"} />
+        <MetaItem
+          label="单元生成"
+          value={
+            unit.structureOrigin === "rule" ? "规则回退" : unit.structureOrigin === "llm" ? "LLM 生成" : "未记录"
+          }
+        />
       </div>
 
       {unit.summary && (

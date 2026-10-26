@@ -464,8 +464,10 @@ function DocumentCard({
             <div className="doc-title-main">
               <strong>{doc.originalName}</strong>
               <div className="muted small">
-                版本 {doc.version} · {formatDate(doc.uploadedAt)} · {formatBytes(doc.size)} · 已拆分{" "}
-                {kind === "srs" ? doc.requirementCount : doc.designCount} 个单元
+                版本 {doc.version} · {formatDate(doc.uploadedAt)} · {formatBytes(doc.size)} ·{" "}
+                {kind === "srs"
+                  ? `已生成 ${doc.requirementCount} 个单元 · ${doc.requirementPointCount ?? 0} 个需求点`
+                  : `已拆分 ${doc.designCount} 个单元`}
               </div>
             </div>
             <StatusPill status={doc.status} />

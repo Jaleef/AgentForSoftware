@@ -66,6 +66,9 @@ export type RequirementType =
 
 export interface RequirementUnit {
   code: string;
+  pointId?: string;
+  sourceKind?: "table" | "text";
+  structureOrigin?: "rule" | "llm";
   sourceId: string;
   parentSourceId: string;
   type: RequirementType;
@@ -151,6 +154,7 @@ export interface StoredDocument {
   error?: string;
   pageCount: number;
   requirements: RequirementUnit[];
+  requirementPoints?: unknown[];
   designUnits: DesignUnit[];
   outline: OutlineNode[];
   stats: DocumentStats;
@@ -174,6 +178,7 @@ export interface DocumentSummary {
   stats: DocumentStats;
   warnings: string[];
   requirementCount: number;
+  requirementPointCount?: number;
   designCount: number;
 }
 
