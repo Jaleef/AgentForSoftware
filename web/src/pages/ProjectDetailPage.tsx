@@ -1,3 +1,9 @@
+/**
+ * 项目资料页面。
+ *
+ * 管理需求/设计文档、代码快照和评价历史。
+ */
+
 import { useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, formatDate, formatShortDate, formatBytes } from "../api";
@@ -24,6 +30,11 @@ import {
 } from "../components/Icons";
 import type { Campaign, DocumentKind, DocumentSummary, SnapshotMeta } from "../types";
 
+/**
+ * 项目资料页面入口。
+ *
+ * 管理需求/设计文档、代码快照和评价历史。
+ */
 export function ProjectDetailPage() {
   const { projectId = "" } = useParams();
   const navigate = useNavigate();

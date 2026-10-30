@@ -1,3 +1,9 @@
+/**
+ * 评价任务后台运行器。
+ *
+ * 负责预检 LLM、加载最新文档/快照、更新进度、取消任务和重启恢复。
+ */
+
 import type { Campaign } from "../types.js";
 import { LlmClient } from "../llm/client.js";
 import { runEvaluation, CancelledError } from "./engine.js";
@@ -17,6 +23,11 @@ export function isCampaignRunning(campaignId: string): boolean {
   return controllers.has(campaignId);
 }
 
+/**
+ * 后台启动一次评价任务。
+ *
+ * 负责 LLM 预检、加载最新文档/快照、写入进度、处理取消和异常。
+ */
 export async function startCampaignRun(campaignId: string, projectId: string): Promise<void> {
   const controller = new AbortController();
   controllers.set(campaignId, controller);

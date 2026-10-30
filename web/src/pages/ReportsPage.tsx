@@ -1,3 +1,9 @@
+/**
+ * 评价报告列表页。
+ *
+ * 按项目列出已完成评价和报告入口。
+ */
+
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, formatDate, percent } from "../api";
 import { useResource } from "../hooks";
@@ -6,6 +12,11 @@ import { IconReport } from "../components/Icons";
 import { levelLabel } from "../utils";
 import type { Campaign } from "../types";
 
+/**
+ * 报告列表页面入口。
+ *
+ * 列出已完成评价并提供报告详情入口。
+ */
 export function ReportsPage() {
   const { projectId = "" } = useParams();
   const navigate = useNavigate();

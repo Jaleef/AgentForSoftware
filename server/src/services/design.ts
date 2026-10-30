@@ -1,3 +1,9 @@
+/**
+ * 设计单元人工维护服务。
+ *
+ * 构造 `SDD-MAN-NNN` 手工设计单元，并支持删除及同步移除设计点。
+ */
+
 import type { DesignUnit, DesignUnitType, StoredDocument } from "../types.js";
 import { extractKeywords, firstSentences, splitSentences } from "../util/text.js";
 import { nowIso } from "../util/id.js";
@@ -50,6 +56,11 @@ function normalizeObligations(input: ManualDesignInput, description: string, int
   return base.slice(0, 10);
 }
 
+/**
+ * 构造手工设计单元。
+ *
+ * 生成 SDD-MAN 编号、摘要、义务和关键词，并标记为已审核。
+ */
 export function buildManualDesignUnit(input: ManualDesignInput, existing: DesignUnit[]): DesignUnit {
   const name = String(input.name ?? "").trim().slice(0, 120);
   if (!name) throw new Error("设计单元名称不能为空");
@@ -87,6 +98,11 @@ export function buildManualDesignUnit(input: ManualDesignInput, existing: Design
   };
 }
 
+/**
+ * 新增手工设计单元。
+ *
+ * 写入最新设计文档并重算统计。
+ */
 export async function addManualDesignUnit(projectId: string, input: ManualDesignInput): Promise<DesignUnit> {
   const result = await mutateStore((data) => {
     const doc = latestSdd(data, projectId);
@@ -103,6 +119,11 @@ export async function addManualDesignUnit(projectId: string, input: ManualDesign
   return result;
 }
 
+/**
+ * 删除设计单元。
+ *
+ * 同步移除对应设计点；LLM 整理期间拒绝删除。
+ */
 export async function deleteDesignUnit(projectId: string, code: string): Promise<DesignUnit | undefined> {
   return mutateStore((data) => {
     const doc = latestSdd(data, projectId);

@@ -1,3 +1,9 @@
+/**
+ * 通用 SVG 图标组件。
+ *
+ * 提供项目导航和操作按钮使用的轻量图标。
+ */
+
 import type { SVGProps } from "react";
 
 type IconProps = SVGProps<SVGSVGElement> & { size?: number };

@@ -1,3 +1,9 @@
+/**
+ * 应用整体布局。
+ *
+ * 提供侧边导航、当前项目选择器、页面内容容器和设置入口。
+ */
+
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useResource } from "../hooks";
@@ -26,6 +32,11 @@ const NAV = [
   { key: "reports", label: "评价报告", desc: "报告与门禁", icon: IconReport, suffix: "/reports" },
 ];
 
+/**
+ * 渲染应用外壳。
+ *
+ * 包含侧边导航、项目选择器、页面内容插槽和设置入口。
+ */
 export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();

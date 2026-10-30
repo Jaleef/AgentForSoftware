@@ -1,3 +1,9 @@
+/**
+ * 前端展示工具。
+ *
+ * 提供类型颜色、层级名称、定位文本和按子系统分组。
+ */
+
 import type { DesignUnit, RequirementType, RequirementUnit } from "./types";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "purple" | "gray" | "cyan";
@@ -39,6 +45,11 @@ export function unitLocator(unit: RequirementUnit | DesignUnit): string {
   return `第 ${unit.location.page} 页 · 第 ${unit.location.line} 行`;
 }
 
+/**
+ * 按子系统对需求/设计单元分组。
+ *
+ * 固定常用子系统顺序，未知子系统按出现顺序稳定排列。
+ */
 export function groupBySubsystem<T extends { subsystem: string }>(items: T[]): Array<{ subsystem: string; items: T[] }> {
   const order = ["数字孪生平台", "降水仪", "重力波仪", "测云仪", "全局"];
   const map = new Map<string, T[]>();

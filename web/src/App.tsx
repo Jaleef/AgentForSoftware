@@ -1,3 +1,9 @@
+/**
+ * 前端路由入口。
+ *
+ * 定义项目、需求、设计、代码、评价、报告和设置页面路由。
+ */
+
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { Layout } from "./components/Layout";
@@ -19,6 +25,11 @@ function ScrollToTop() {
   return null;
 }
 
+/**
+ * 定义前端路由表。
+ *
+ * 把项目、需求、设计、代码、评价、报告和设置页面挂载到对应 URL。
+ */
 export function App() {
   return (
     <BrowserRouter>

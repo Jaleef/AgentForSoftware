@@ -1,3 +1,9 @@
+/**
+ * 一致性评价页面。
+ *
+ * 创建任务、轮询进度、展示得分/覆盖率、逐条关系、义务覆盖矩阵、设计悬浮详情和人工审核。
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, formatDate, percent } from "../api";
@@ -15,14 +21,20 @@ import {
   Tag,
 } from "../components/ui";
 import { IconAlert, IconCheck, IconLink, IconPlay, IconX } from "../components/Icons";
-import { levelLabel } from "../utils";
-import type { Campaign, CampaignSummary, Relation, RelationStatus } from "../types";
+import { levelLabel, unitLocator } from "../utils";
+import type { Campaign, CampaignSummary, DesignUnit, Relation, RelationStatus } from "../types";
 import { STATUS_LABEL, STATUS_TONE } from "../types";
 
+/**
+ * 一致性评价页面入口。
+ *
+ * 负责任务创建、进度轮询、汇总、关系列表、义务覆盖详情和设计悬浮对比。
+ */
 export function EvaluationPage() {
   const { projectId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const project = useResource(() => api.getProject(projectId), [projectId]);
+  const designDoc = useResource(() => api.getDocument(projectId, "sdd"), [projectId]);
   const snapshot = useResource(
     () => api.listSnapshots(projectId).then((list) => list.find((item) => item.status === "ready")),
     [projectId],
@@ -48,6 +60,7 @@ export function EvaluationPage() {
   const [search, setSearch] = useState("");
   const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  const [peekDesignCode, setPeekDesignCode] = useState<string | null>(searchParams.get("peek"));
   const focus = searchParams.get("focus");
 
   const requirementTotal = project.data?.requirementDoc?.total ?? 0;
@@ -155,6 +168,9 @@ export function EvaluationPage() {
     return true;
   });
   const selectedRelation = relations.find((relation) => relation.id === selectedRelationId) ?? filteredRelations[0];
+  const peekDesign = peekDesignCode
+    ? designDoc.data?.designUnits.find((unit) => unit.code === peekDesignCode)
+    : undefined;
 
   return (
     <>
@@ -430,7 +446,12 @@ export function EvaluationPage() {
               </div>
 
               {selectedRelation && (
-                <RelationDetail relation={selectedRelation} reviewing={reviewing} onReview={review} />
+                <RelationDetail
+                  relation={selectedRelation}
+                  reviewing={reviewing}
+                  onReview={review}
+                  onOpenDesign={setPeekDesignCode}
+                />
               )}
             </div>
           </Card>
@@ -444,7 +465,171 @@ export function EvaluationPage() {
           />
         </Card>
       )}
+
+      {peekDesignCode && (
+        <DesignPeek
+          code={peekDesignCode}
+          unit={peekDesign}
+          loading={designDoc.loading}
+          error={designDoc.error}
+          onClose={() => setPeekDesignCode(null)}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * 左侧设计单元悬浮对比窗。
+ *
+ * 展示设计描述、义务、接口、字段和来源，便于与右侧判定对照。
+ */
+function DesignPeek({
+  code,
+  unit,
+  loading,
+  error,
+  onClose,
+}: {
+  code: string;
+  unit?: DesignUnit;
+  loading: boolean;
+  error?: string | null;
+  onClose: () => void;
+}) {
+  return (
+    <aside className="design-peek" aria-label={`设计单元 ${code}`}>
+      <div className="design-peek-head">
+        <div>
+          <div className="section-label">设计单元对比</div>
+          <h3>{unit?.name ?? code}</h3>
+          <div className="muted small">
+            {code}
+            {unit ? ` · ${unit.type} · ${unit.subsystem}` : ""}
+          </div>
+        </div>
+        <button className="icon-btn" type="button" onClick={onClose} aria-label="关闭设计单元对比">
+          <IconX size={18} />
+        </button>
+      </div>
+
+      <div className="design-peek-body">
+        {loading && <Spinner label="加载设计单元…" />}
+        {!loading && (error || !unit) && (
+          <Notice tone="amber">
+            {error || `未找到设计单元 ${code}，可能已重新拆分。`}
+          </Notice>
+        )}
+
+        {unit && (
+          <>
+            <div className="design-peek-tags">
+              <Tag tone="blue">{unit.type}</Tag>
+              <Tag tone="gray">{unit.subsystem}</Tag>
+              <span className="muted small">置信度 {percent(unit.confidence * 100)}</span>
+            </div>
+
+            <div className="detail-section">
+              <div className="section-label">设计描述</div>
+              <div className="quote-block">{unit.description}</div>
+            </div>
+
+            {unit.summary && (
+              <div className="detail-section">
+                <div className="section-label">设计摘要</div>
+                <p className="paragraph">{unit.summary}</p>
+              </div>
+            )}
+
+            <div className="detail-section">
+              <div className="section-label">设计义务 ({unit.obligations.length})</div>
+              <ol className="obligations">
+                {unit.obligations.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+                {!unit.obligations.length && <li className="muted">暂无设计义务。</li>}
+              </ol>
+            </div>
+
+            {unit.interfaceText && (
+              <div className="detail-section">
+                <div className="section-label">接口</div>
+                <pre className="code-block">{unit.interfaceText}</pre>
+              </div>
+            )}
+
+            {(unit.input || unit.output) && (
+              <div className="io-grid">
+                <div>
+                  <div className="section-label">输入</div>
+                  <p className="paragraph small">{unit.input || "—"}</p>
+                </div>
+                <div>
+                  <div className="section-label">输出</div>
+                  <p className="paragraph small">{unit.output || "—"}</p>
+                </div>
+              </div>
+            )}
+
+            {unit.fields.length > 0 && (
+              <div className="detail-section">
+                <div className="section-label">字段 ({unit.fields.length})</div>
+                <div className="table-wrap">
+                  <table className="data-table compact">
+                    <thead>
+                      <tr>
+                        <th>字段</th>
+                        <th>含义</th>
+                        <th>类型</th>
+                        <th>主键</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unit.fields.map((field) => (
+                        <tr key={field.name}>
+                          <td className="mono">{field.name}</td>
+                          <td>{field.meaning}</td>
+                          <td>{field.type}</td>
+                          <td>{field.primaryKey ? "√" : ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="meta-grid">
+              <MetaItem label="来源章节（仅追溯）" value={unit.chapter} wide />
+              <MetaItem label="源文档 ID" value={unit.sourceId || "—"} muted={!unit.sourceId} />
+              <MetaItem
+                label="定位"
+                value={unit.location.page ? `${unitLocator(unit)}（按渲染分页估算）` : "手工添加"}
+              />
+            </div>
+          </>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function MetaItem({
+  label,
+  value,
+  muted,
+  wide,
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+  wide?: boolean;
+}) {
+  return (
+    <div className={`meta-item ${wide ? "wide" : ""}`}>
+      <span className="meta-label">{label}</span>
+      <span className={`meta-value ${muted ? "muted" : ""}`}>{value}</span>
+    </div>
   );
 }
 
@@ -556,14 +741,28 @@ function CampaignSummaryView({
   );
 }
 
+const COVERAGE_META = {
+  covered: { label: "已覆盖", tone: "green" },
+  partial: { label: "部分覆盖", tone: "amber" },
+  conflicting: { label: "冲突", tone: "red" },
+  missing: { label: "未覆盖", tone: "gray" },
+} as const;
+
+/**
+ * 需求→设计或设计→代码关系详情。
+ *
+ * 展示状态、覆盖率、义务矩阵、证据、缺口、目标链接和人工审核。
+ */
 function RelationDetail({
   relation,
   reviewing,
   onReview,
+  onOpenDesign,
 }: {
   relation: Relation;
   reviewing: boolean;
   onReview: (relation: Relation, status: "accepted" | "pending" | "rejected") => void;
+  onOpenDesign: (code: string) => void;
 }) {
   return (
     <div className="relation-detail">
@@ -572,9 +771,20 @@ function RelationDetail({
           {STATUS_LABEL[relation.status]}
         </Tag>
         <span className={`severity severity-${relation.severity.toLowerCase()}`}>{relation.severity === "none" ? "无风险" : relation.severity}</span>
-        <span className="muted small">置信度 {percent(relation.confidence * 100)}</span>
+        <span className="muted small">
+          {relation.obligations?.length ? "覆盖置信度" : "置信度"} {percent(relation.confidence * 100)}
+        </span>
         <span className="muted small">· {relation.method === "llm" ? "LLM" : "规则"}</span>
       </div>
+      {typeof relation.coverageRatio === "number" && (
+        <div className="coverage-banner">
+          <strong>联合覆盖 {percent(relation.coverageRatio * 100)}</strong>
+          <span className="muted small">
+            {relation.obligations?.filter((item) => item.status === "covered").length ?? 0}/
+            {relation.obligations?.length ?? 0} 条义务被完整覆盖
+          </span>
+        </div>
+      )}
       <h3 className="relation-source">{relation.sourceName}</h3>
       <div className="muted small">
         {relation.sourceCode} · {relation.sourceType} · {relation.sourceSubsystem}
@@ -589,6 +799,31 @@ function RelationDetail({
         <div className="detail-section">
           <div className="section-label">证据</div>
           <div className="quote-block secondary small">{relation.evidence}</div>
+        </div>
+      )}
+
+      {relation.obligations && relation.obligations.length > 0 && (
+        <div className="detail-section">
+          <div className="section-label">原子义务覆盖（多设计联合）</div>
+          <div className="coverage-list">
+            {relation.obligations.map((obligation) => {
+              const meta = COVERAGE_META[obligation.status];
+              return (
+                <div key={obligation.id} className={`coverage-row coverage-${obligation.status}`}>
+                  <Tag tone={meta.tone}>{meta.label}</Tag>
+                  <div className="coverage-content">
+                    <div className="coverage-text">
+                      <span className="coverage-id">{obligation.id}</span>
+                      {obligation.text}
+                    </div>
+                    <div className="muted small">
+                      {obligation.coveredBy.length ? `覆盖设计：${obligation.coveredBy.join("、")}` : "无设计覆盖"}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -613,13 +848,41 @@ function RelationDetail({
       <div className="detail-section">
         <div className="section-label">关联目标</div>
         {relation.targetNames.length ? (
-          <div className="chips">
-            {relation.targetNames.map((target, index) => (
-              <span key={index} className="chip chip-static">
-                {target}
-              </span>
-            ))}
-          </div>
+          <>
+            {relation.level === "requirement_design" && (
+              <p className="muted small">点击设计单元可在左侧悬浮窗中对比查看。</p>
+            )}
+            <div className="chips">
+              {relation.targetNames.map((target, index) => {
+                const targetCode = relation.targetCodes[index];
+                const coverage = relation.targetCoverages?.find((item) => item.targetCode === targetCode);
+                if (relation.level === "requirement_design" && targetCode) {
+                  return (
+                    <button
+                      key={targetCode}
+                      type="button"
+                      className="chip chip-link"
+                      onClick={() => onOpenDesign(targetCode)}
+                      title={`对比查看设计单元 ${targetCode}`}
+                    >
+                      <span>{target}</span>
+                      <span className="chip-code">{targetCode}</span>
+                      {coverage && (
+                        <span className="chip-coverage">
+                          覆盖 {Math.round(coverage.contributionRatio * 100)}%
+                        </span>
+                      )}
+                    </button>
+                  );
+                }
+                return (
+                  <span key={`${target}-${index}`} className="chip chip-static">
+                    {target}
+                  </span>
+                );
+              })}
+            </div>
+          </>
         ) : (
           <span className="muted small">未匹配到目标，需补充设计/实现。</span>
         )}

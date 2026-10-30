@@ -1,3 +1,9 @@
+/**
+ * 需求文档解析与需求点抽取。
+ *
+ * 需求表直接生成规则点；纯文字叶子章节作为 LLM 候选；生成规则回退需求和稳定编号。
+ */
+
 import type {
   DocumentStats,
   OutlineNode,
@@ -304,6 +310,11 @@ export function buildFallbackUnits(points: RequirementPoint[]): RequirementUnit[
   return assignRequirementCodes(units);
 }
 
+/**
+ * 把需求点转换为需求单元。
+ *
+ * 保留原文、位置和来源；子系统由外部统一映射提供。
+ */
 export function requirementUnitFromPoint(
   point: RequirementPoint,
   fields: {

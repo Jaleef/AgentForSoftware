@@ -1,3 +1,9 @@
+/**
+ * 前端 API 客户端与展示格式化。
+ *
+ * 封装所有后端请求，并提供日期、字节和百分比格式化。
+ */
+
 import type {
   Campaign,
   CodeFile,
@@ -14,6 +20,11 @@ import type {
   StoredDocument,
 } from "./types";
 
+/**
+ * 发送前端 API 请求并统一处理错误。
+ *
+ * 自动设置 JSON Content-Type，解析后端错误消息。
+ */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     ...init,
@@ -36,6 +47,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+/**
+ * 前端后端 API 方法集合。
+ *
+ * 按项目、文档、单元、评价、报告和设置分组封装请求。
+ */
 export const api = {
   listProjects: () =>
     request<{ projects: ProjectSummary[] }>("/projects").then((response) => response.projects),

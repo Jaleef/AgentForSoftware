@@ -1,3 +1,9 @@
+/**
+ * 代码结构页面。
+ *
+ * 展示代码快照、语言统计、目录树、文件符号和代码片段。
+ */
+
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, formatBytes, formatDate } from "../api";
@@ -38,6 +44,11 @@ const KIND_TONE: Record<string, "blue" | "green" | "amber" | "red" | "purple" | 
   component: "cyan",
 };
 
+/**
+ * 代码结构页面入口。
+ *
+ * 加载代码快照并展示语言统计、目录树、文件符号和代码片段。
+ */
 export function CodePage() {
   const { projectId = "" } = useParams();
   const snapshotResource = useResource(() => api.latestSnapshot(projectId), [projectId]);

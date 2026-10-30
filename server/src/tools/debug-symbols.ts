@@ -1,3 +1,9 @@
+/**
+ * 代码符号调试脚本。
+ *
+ * 打印代码快照中的文件、符号、路由和模型解析结果。
+ */
+
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { extractSymbols } from "../parsers/code.js";

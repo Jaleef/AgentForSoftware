@@ -1,3 +1,9 @@
+/**
+ * 文档持久化与后台解析服务。
+ *
+ * 负责 DOCX 落盘、解析结果保存、重新拆分、LLM 整理、统计重算和恢复任务。
+ */
+
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DocumentKind, DocumentStats, ParsedDocument, StoredDocument } from "../types.js";
@@ -88,6 +94,11 @@ export interface SaveParsedOptions {
   version?: string;
 }
 
+/**
+ * 保存上传文档并写入解析结果。
+ *
+ * 替换同项目同类型旧文档，必要时启动后台 LLM 整理。
+ */
 export async function saveParsedDocument(options: SaveParsedOptions): Promise<StoredDocument> {
   const parsed = parseBuffer(options.buffer, options.kind);
   const dir = ensureProjectDir(options.projectId);
@@ -157,6 +168,11 @@ export async function saveParsedDocument(options: SaveParsedOptions): Promise<St
 
 const enrichingDocs = new Set<string>();
 
+/**
+ * 启动文档后台 LLM 整理。
+ *
+ * 用运行中集合避免重复任务，并在结束后清理状态。
+ */
 export async function runEnrichment(docId: string): Promise<void> {
   if (enrichingDocs.has(docId)) return;
   enrichingDocs.add(docId);
@@ -303,6 +319,11 @@ export function resolveStoredPath(doc: StoredDocument): string {
   return join(projectDir(doc.projectId), doc.filename);
 }
 
+/**
+ * 重新解析已上传文档。
+ *
+ * 保留人工新增单元，刷新需求点/设计点、统计和轮廓。
+ */
 export async function reparseDocument(docId: string): Promise<StoredDocument | undefined> {
   const store = await getStore();
   const doc = store.documents.find((d) => d.id === docId);
@@ -335,6 +356,11 @@ export async function reparseDocument(docId: string): Promise<StoredDocument | u
   });
 }
 
+/**
+ * 生成文档列表摘要。
+ *
+ * 避免把完整需求点/设计点列表传给列表接口。
+ */
 export function documentSummary(doc: StoredDocument) {
   return {
     id: doc.id,

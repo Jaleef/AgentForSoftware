@@ -1,3 +1,9 @@
+/**
+ * 文本清洗、分词和相似度工具。
+ *
+ * 提供中文 bigram、领域词/跨语言别名、Jaccard/覆盖度、关键词和 JSON 解析。
+ */
+
 const CJK = /[\u4e00-\u9fa5]/;
 
 const STOP_CHARS = new Set("的了和与及或在为是有对将把从到等以及其该这那本项个系统功能需求应可需中上下时进行实现".split(""));
@@ -250,6 +256,11 @@ export function similarity(a: string, b: string): number {
   return jaccard(tokenSet(a), tokenSet(b));
 }
 
+/**
+ * 从文本中提取高频关键词。
+ *
+ * 过滤停用词和过短 token，按出现次数排序。
+ */
 export function extractKeywords(text: string, limit = 12): string[] {
   const counts = new Map<string, number>();
   for (const token of tokenize(text)) {

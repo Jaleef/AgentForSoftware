@@ -1,3 +1,9 @@
+/**
+ * 需求单元人工维护服务。
+ *
+ * 构造 `SRS-MAN-NNN` 手工需求单元，并支持删除及同步移除需求点。
+ */
+
 import type { RequirementType, RequirementUnit, StoredDocument } from "../types.js";
 import { REQUIREMENT_TYPES } from "../types.js";
 import { extractKeywords, firstSentences, splitSentences } from "../util/text.js";
@@ -44,6 +50,11 @@ function normalizeObligations(input: ManualRequirementInput, description: string
     .slice(0, 8);
 }
 
+/**
+ * 构造手工需求单元。
+ *
+ * 生成 SRS-MAN 编号、摘要、义务和关键词，并标记为已审核。
+ */
 export function buildManualRequirement(
   input: ManualRequirementInput,
   existing: RequirementUnit[],
@@ -81,6 +92,11 @@ export function buildManualRequirement(
   };
 }
 
+/**
+ * 新增手工需求单元。
+ *
+ * 写入最新需求文档并重算统计。
+ */
 export async function addManualRequirement(
   projectId: string,
   input: ManualRequirementInput,
@@ -100,6 +116,11 @@ export async function addManualRequirement(
   return result;
 }
 
+/**
+ * 删除需求单元。
+ *
+ * 同步移除对应需求点；LLM 整理期间拒绝删除。
+ */
 export async function deleteRequirementUnit(
   projectId: string,
   code: string,

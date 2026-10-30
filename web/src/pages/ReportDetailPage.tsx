@@ -1,3 +1,9 @@
+/**
+ * 评价报告详情页。
+ *
+ * 展示完整报告、门禁结论和关系明细，支持打印/导出。
+ */
+
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, formatDate, percent } from "../api";
 import { useResource } from "../hooks";
@@ -17,6 +23,11 @@ import { levelLabel } from "../utils";
 import type { Relation } from "../types";
 import { STATUS_LABEL, STATUS_TONE } from "../types";
 
+/**
+ * 报告详情页面入口。
+ *
+ * 展示总览、分桶、逐条关系和打印/导出操作。
+ */
 export function ReportDetailPage() {
   const { projectId = "", campaignId = "" } = useParams();
   const navigate = useNavigate();

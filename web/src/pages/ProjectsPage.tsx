@@ -1,3 +1,9 @@
+/**
+ * 项目列表页面。
+ *
+ * 展示项目、统计摘要并支持新建项目。
+ */
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, formatShortDate } from "../api";
@@ -6,6 +12,11 @@ import { Button, Card, EmptyState, Notice, PageHeader, Spinner } from "../compon
 import { IconArrowLeft, IconFolder, IconPlus } from "../components/Icons";
 import type { ProjectSummary } from "../types";
 
+/**
+ * 项目列表页面入口。
+ *
+ * 展示项目卡片、统计摘要并支持创建项目。
+ */
 export function ProjectsPage() {
   const navigate = useNavigate();
   const projects = useResource(() => api.listProjects(), []);

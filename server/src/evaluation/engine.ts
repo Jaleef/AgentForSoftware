@@ -1,3 +1,9 @@
+/**
+ * 需求→设计、设计→代码一致性评价引擎。
+ *
+ * 负责候选检索、LLM 判定、义务级覆盖聚合、启发式回退和评价结果组装。
+ */
+
 import type {
   CampaignSummary,
   CodeSnapshot,
@@ -7,6 +13,8 @@ import type {
   RelationLevel,
   RelationStatus,
   RequirementUnit,
+  RelationObligation,
+  TargetCoverage,
 } from "../types.js";
 import type { LlmClient } from "../llm/client.js";
 import { mapLimit } from "../llm/client.js";
@@ -55,6 +63,20 @@ export interface EvaluationResult {
   method: "llm" | "heuristic";
 }
 
+interface RawTargetCoverage {
+  designCode?: string;
+  targetCode?: string;
+  code?: string;
+  coveredObligations?: string[];
+  coveredObligationIds?: string[];
+  partialObligations?: string[];
+  partialObligationIds?: string[];
+  conflictingObligations?: string[];
+  conflictingObligationIds?: string[];
+  evidence?: string;
+  confidence?: number | string;
+}
+
 interface RawJudgment {
   code?: string;
   requirementCode?: string;
@@ -62,6 +84,7 @@ interface RawJudgment {
   status?: string;
   targetCodes?: string[];
   targetHandles?: string[];
+  targetCoverages?: RawTargetCoverage[];
   matches?: Array<{
     designCode?: string;
     code?: string;
@@ -143,6 +166,241 @@ function cleanGaps(value: unknown): string[] {
     .slice(0, 8);
 }
 
+function normalizeObligationIds(values: unknown, obligations: RequirementObligationItem[]): string[] {
+  if (!Array.isArray(values)) return [];
+  const allowed = new Set(obligations.map((item) => item.id));
+  const byText = new Map(obligations.map((item) => [item.text.trim().toLowerCase(), item.id]));
+  const result = new Set<string>();
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    const direct = /^O(\d+)$/i.exec(trimmed);
+    if (direct) {
+      const id = `O${Number(direct[1])}`;
+      if (allowed.has(id)) result.add(id);
+      continue;
+    }
+    const byExactText = byText.get(trimmed.toLowerCase());
+    if (byExactText) {
+      result.add(byExactText);
+      continue;
+    }
+    const numbers = trimmed.match(/\d+/g) ?? [];
+    for (let i = numbers.length - 1; i >= 0; i--) {
+      const id = `O${Number(numbers[i])}`;
+      if (allowed.has(id)) {
+        result.add(id);
+        break;
+      }
+    }
+  }
+  return [...result];
+}
+
+/**
+ * 聚合多个设计对需求义务的覆盖，生成联合覆盖关系。
+ *
+ * 按设计合并义务 ID，再按“冲突 > 完整覆盖 > 部分覆盖 > 缺失”计算状态和覆盖置信度。
+ */
+function buildCoverageRelation(
+  requirement: RequirementUnit,
+  raw: RawJudgment,
+  candidates: Set<string>,
+  designByCode: Map<string, DesignUnit>,
+): Relation | undefined {
+  if (!Array.isArray(raw.targetCoverages)) return undefined;
+  const obligations = requirementObligations(requirement);
+  const obligationIds = new Set(obligations.map((item) => item.id));
+  const merged = new Map<
+    string,
+    {
+      covered: Set<string>;
+      partial: Set<string>;
+      conflicting: Set<string>;
+      evidence: string;
+      confidence: number;
+    }
+  >();
+
+  for (const item of raw.targetCoverages) {
+    const code = cleanText(item.designCode || item.targetCode || item.code || "");
+    if (!code || !candidates.has(code)) continue;
+    const covered = normalizeObligationIds(
+      item.coveredObligations ?? item.coveredObligationIds,
+      obligations,
+    );
+    const partial = normalizeObligationIds(
+      item.partialObligations ?? item.partialObligationIds,
+      obligations,
+    );
+    const conflicting = normalizeObligationIds(
+      item.conflictingObligations ?? item.conflictingObligationIds,
+      obligations,
+    );
+    if (!covered.length && !partial.length && !conflicting.length) continue;
+    const current =
+      merged.get(code) ?? {
+        covered: new Set<string>(),
+        partial: new Set<string>(),
+        conflicting: new Set<string>(),
+        evidence: "",
+        confidence: 0,
+      };
+    covered.forEach((id) => current.covered.add(id));
+    partial.forEach((id) => current.partial.add(id));
+    conflicting.forEach((id) => current.conflicting.add(id));
+    if (item.evidence) current.evidence = cleanText(item.evidence).slice(0, 500);
+    current.confidence = Math.max(current.confidence, confidenceOf(item.confidence, 0.7));
+    merged.set(code, current);
+  }
+
+  const coveredBy = new Map<string, string[]>();
+  const partialBy = new Map<string, string[]>();
+  const conflictBy = new Map<string, string[]>();
+  const addMap = (map: Map<string, string[]>, id: string, code: string): void => {
+    const list = map.get(id) ?? [];
+    if (!list.includes(code)) list.push(code);
+    map.set(id, list);
+  };
+
+  for (const [code, item] of merged) {
+    for (const id of item.covered) if (obligationIds.has(id)) addMap(coveredBy, id, code);
+    for (const id of item.partial) if (obligationIds.has(id)) addMap(partialBy, id, code);
+    for (const id of item.conflicting) if (obligationIds.has(id)) addMap(conflictBy, id, code);
+  }
+
+  const relationObligations: RelationObligation[] = obligations.map((obligation) => {
+    const status = conflictBy.has(obligation.id)
+      ? "conflicting"
+      : coveredBy.has(obligation.id)
+        ? "covered"
+        : partialBy.has(obligation.id)
+          ? "partial"
+          : "missing";
+    return {
+      id: obligation.id,
+      text: obligation.text,
+      status,
+      coveredBy: [
+        ...new Set([
+          ...(conflictBy.get(obligation.id) ?? []),
+          ...(coveredBy.get(obligation.id) ?? []),
+          ...(partialBy.get(obligation.id) ?? []),
+        ]),
+      ],
+    };
+  });
+
+  const coveredCount = relationObligations.filter((item) => item.status === "covered").length;
+  const partialCount = relationObligations.filter((item) => item.status === "partial").length;
+  const conflictCount = relationObligations.filter((item) => item.status === "conflicting").length;
+  const total = Math.max(relationObligations.length, 1);
+  const coverageRatio = Math.round(((coveredCount + 0.5 * partialCount) / total) * 1000) / 1000;
+
+  const targetCoverages: TargetCoverage[] = [...merged.entries()].map(([code, item]) => {
+    const targetConflicting = [...item.conflicting].filter((id) => obligationIds.has(id));
+    const targetCovered = [...item.covered].filter(
+      (id) => obligationIds.has(id) && !targetConflicting.includes(id),
+    );
+    const targetPartial = [...item.partial].filter(
+      (id) =>
+        obligationIds.has(id) &&
+        !targetCovered.includes(id) &&
+        !targetConflicting.includes(id),
+    );
+    return {
+      targetCode: code,
+      targetName: designByCode.get(code)?.name ?? code,
+      coveredObligationIds: targetCovered,
+      partialObligationIds: targetPartial,
+      conflictingObligationIds: targetConflicting,
+      contributionRatio:
+        Math.round(((targetCovered.length + 0.5 * targetPartial.length) / total) * 1000) / 1000,
+      evidence: item.evidence,
+      confidence: Math.round(item.confidence * 100) / 100,
+    };
+  });
+
+  const status: RelationStatus =
+    conflictCount > 0
+      ? "mismatch"
+      : coveredCount === relationObligations.length
+        ? "satisfied"
+        : coveredCount > 0 || partialCount > 0
+          ? "partial"
+          : "missing";
+
+  // Coverage confidence: for each obligation take the best target confidence,
+  // discounted when the target only partially covers or conflicts with it.
+  let certaintySum = 0;
+  for (const obligation of relationObligations) {
+    let best = 0;
+    for (const target of targetCoverages) {
+      if (target.conflictingObligationIds.includes(obligation.id)) {
+        best = Math.max(best, target.confidence * 0.2);
+      } else if (target.coveredObligationIds.includes(obligation.id)) {
+        best = Math.max(best, target.confidence);
+      } else if (target.partialObligationIds.includes(obligation.id)) {
+        best = Math.max(best, target.confidence * 0.6);
+      }
+    }
+    certaintySum += best;
+  }
+  const confidence =
+    targetCoverages.length > 0
+      ? Math.round((certaintySum / total) * 100) / 100
+      : 0.4;
+
+  const targetCodes = targetCoverages.map((item) => item.targetCode);
+  const targetNames = targetCoverages.map((item) => item.targetName);
+  const evidence = targetCoverages
+    .filter((item) => item.evidence)
+    .map((item) => `${item.targetName}：${item.evidence}`)
+    .join("\n")
+    .slice(0, 800);
+  const gaps = relationObligations
+    .filter((item) => item.status !== "covered")
+    .map((item) => `${item.status === "conflicting" ? "冲突" : item.status === "partial" ? "部分覆盖" : "未覆盖"}：${item.id} ${item.text}`)
+    .slice(0, 8);
+  const rationale =
+    targetCoverages.length === 0
+      ? `所有候选设计均未声明覆盖需求义务（共 ${relationObligations.length} 条）。`
+      : `联合覆盖 ${coveredCount}/${relationObligations.length} 条义务（${Math.round(
+          coverageRatio * 100,
+        )}%）：${targetCoverages
+          .map(
+            (item) =>
+              `${item.targetName} 覆盖 ${
+                [...item.coveredObligationIds, ...item.partialObligationIds].join("、") || "无"
+              }`,
+          )
+          .join("；")}。`;
+
+  return makeRelation({
+    level: "requirement_design",
+    sourceCode: requirement.code,
+    sourceName: requirement.title,
+    sourceType: requirement.type,
+    sourceSubsystem: requirement.subsystem,
+    targetCodes,
+    targetNames,
+    status,
+    confidence,
+    rationale,
+    evidence,
+    gaps,
+    suggestions:
+      status === "satisfied"
+        ? "联合覆盖完整，建议保持设计之间的一致性并补充测试。"
+        : "按缺口清单补充设计义务，或确认该义务是否应由其他设计单元承担。",
+    method: "llm",
+    coverageRatio,
+    targetCoverages,
+    obligations: relationObligations,
+  });
+}
+
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size)
@@ -168,6 +426,23 @@ function designPayload(unit: DesignUnit) {
   };
 }
 
+interface RequirementObligationItem {
+  id: string;
+  text: string;
+}
+
+/** Stable obligation ids used for the coverage matrix. */
+export function requirementObligations(unit: RequirementUnit): RequirementObligationItem[] {
+  const texts = unit.obligations
+    .map((text) => clip(text, 240))
+    .filter((text) => text.length >= 3)
+    .slice(0, 8);
+  if (!texts.length) {
+    texts.push(clip(unit.summary || unit.description || unit.title, 240) || "满足需求描述中的全部要求");
+  }
+  return texts.map((text, index) => ({ id: `O${index + 1}`, text }));
+}
+
 function requirementPayload(unit: RequirementUnit) {
   return {
     code: unit.code,
@@ -176,23 +451,28 @@ function requirementPayload(unit: RequirementUnit) {
     title: unit.title,
     description: clip(unit.description, 650),
     detail: clip(unit.detail, 450),
-    obligations: unit.obligations.slice(0, 8).map((o) => clip(o, 110)),
+    obligations: requirementObligations(unit),
   };
 }
 
-const REQ_SYSTEM = `你是软件质量评价专家，负责评审"需求 → 设计"的一致性。判断必须严谨、可审计，只依据提供的需求与候选设计文本。
-状态定义：
-- satisfied：至少一个设计单元完整覆盖该需求的全部原子义务（功能、输入输出、关键约束）。
-- partial：设计覆盖主要功能，但缺少部分原子义务、接口、数据或约束。
-- missing：候选设计中没有单元实现该需求（不要因为名称相似就判覆盖）。
-- mismatch：设计存在，但与需求的行为、对象或约束矛盾。
+const REQ_SYSTEM = `你是软件质量评价专家，负责判断"设计对需求原子义务"的覆盖情况。判断必须严谨、可审计，只依据提供的需求与候选设计文本。
+
+输入中每条需求包含 obligations（带 id 的原子义务）和 candidates（候选设计）。你要逐个设计判断它覆盖了哪些义务，不要直接给整条需求下 satisfied/partial 结论。
+
 规则：
-1. targetCodes 只能从该需求的 candidates 中选择；不得编造 code。
-2. 判 satisfied 必须有具体设计证据；evidence 引用设计原文片段（不超过 120 字）。
-3. gaps 列出缺失/偏差的具体条目；satisfied 时为空数组。
-4. suggestions 给出可执行的补齐建议（一句话）。
-5. confidence 为 0-1，证据不足时不要高于 0.6。
-只输出 JSON：{"items":[{"requirementCode":"SRS-FR-001","status":"satisfied|partial|missing|mismatch","targetCodes":["SDD-FUN-001"],"confidence":0.85,"rationale":"...","evidence":"...","gaps":["..."],"suggestions":"..."}]}`;
+1. designCode 只能从该需求的 candidates 中选择；obligationId 只能使用输入 obligations 中的 id；不得编造。
+2. 一个设计可以只覆盖部分义务；多个设计可以共同覆盖同一个需求；同一义务可以被多个设计覆盖。
+3. coveredObligations：该设计完整覆盖的义务 id。
+4. partialObligations：该设计只部分覆盖、缺少输入输出/边界/约束的义务 id。
+5. conflictingObligations：该设计与该义务明显矛盾时填写；如果只是没提到，不要填冲突，填 missing（不输出）。
+6. 一个候选如果对该需求没有任何覆盖或冲突，不要输出该 designCode。
+7. evidence 必须引用设计原文片段（不超过 120 字）；confidence 为 0-1，表示该设计对这些义务覆盖判断的把握。
+8. 不要输出整条需求的 status；最终状态由程序按多个设计的并集计算。
+
+只输出 JSON：
+{"items":[{"requirementCode":"SRS-FR-001","targetCoverages":[{"designCode":"SDD-FUN-001","coveredObligations":["O1","O2"],"partialObligations":["O3"],"conflictingObligations":[],"evidence":"...","confidence":0.9}]}]}
+如果某条需求的所有候选都没有覆盖任何义务，仍要返回该需求的 requirementCode，targetCoverages 为空数组：
+{"items":[{"requirementCode":"SRS-FR-001","targetCoverages":[]}]}`;
 
 const CODE_SYSTEM = `你是资深代码审计专家，负责评审"设计 → 代码实现"的一致性。只依据提供的设计文本与候选代码片段判断，不得假设未展示的代码。
 状态定义：
@@ -229,6 +509,9 @@ function makeRelation(args: {
   gaps: string[];
   suggestions: string;
   method: "llm" | "heuristic";
+  coverageRatio?: number;
+  targetCoverages?: TargetCoverage[];
+  obligations?: RelationObligation[];
 }): Relation {
   return {
     id: newId("rel"),
@@ -249,9 +532,17 @@ function makeRelation(args: {
     method: args.method,
     reviewStatus: "pending",
     reviewNote: "",
+    ...(args.coverageRatio !== undefined ? { coverageRatio: args.coverageRatio } : {}),
+    ...(args.targetCoverages ? { targetCoverages: args.targetCoverages } : {}),
+    ...(args.obligations ? { obligations: args.obligations } : {}),
   };
 }
 
+/**
+ * 无 LLM 或批次失败时的需求→设计启发式回退。
+ *
+ * 只根据检索分数判断相关性，因此最多判 partial，不虚假宣称 satisfied。
+ */
 function heuristicRequirementRelation(
   requirement: RequirementUnit,
   ranked: ReturnType<typeof rankDesignCandidates>,
@@ -260,7 +551,8 @@ function heuristicRequirementRelation(
   let status: RelationStatus = "missing";
   let targets: typeof ranked = [];
   if (top && top.score >= 0.4) {
-    status = "satisfied";
+    // Heuristic retrieval cannot verify every obligation, so never claim satisfied.
+    status = "partial";
     targets = ranked.filter((r) => r.score >= 0.24).slice(0, 2);
   } else if (top && top.score >= 0.2) {
     status = "partial";
@@ -280,14 +572,11 @@ function heuristicRequirementRelation(
     rationale:
       status === "missing"
         ? "未检索到语义相近的设计单元（启发式判断，需人工复核）。"
-        : `启发式匹配：设计「${names[0]}」与需求关键词重合度 ${(top.score * 100).toFixed(0)}%，需人工确认覆盖完整性。`,
+        : `启发式匹配：设计「${names[0]}」与需求关键词重合度 ${(top.score * 100).toFixed(0)}%；因无法逐条核验义务，最多判为部分覆盖。`,
     evidence: targets[0]
       ? clip(targets[0].unit.summary || targets[0].unit.description, 150)
       : "",
-    gaps:
-      status === "satisfied"
-        ? []
-        : ["启发式无法逐条核验原子义务，需复核输入输出与边界条件"],
+    gaps: ["启发式无法逐条核验原子义务，需复核输入输出与边界条件"],
     suggestions:
       status === "missing"
         ? "补充对应模块/子功能设计，或在需求中明确由既有模块承载。"
@@ -345,6 +634,11 @@ function heuristicDesignRelation(
   });
 }
 
+/**
+ * 执行一次一致性评价。
+ *
+ * 串行/并行处理需求→设计和设计→代码两个层级，返回关系、汇总、警告和方法标记。
+ */
 export async function runEvaluation(
   options: EvaluationOptions,
 ): Promise<EvaluationResult> {
@@ -479,6 +773,17 @@ export async function runEvaluation(
             const item = judged.get(requirement.code);
             if (!item) {
               relations.push(heuristicRequirementRelation(requirement, ranked));
+              continue;
+            }
+            const coverageRelation = buildCoverageRelation(
+              requirement,
+              item,
+              candidates,
+              designByCode,
+            );
+            if (coverageRelation) {
+              relations.push(coverageRelation);
+              usedLlm = true;
               continue;
             }
             const status = normalizeStatus(

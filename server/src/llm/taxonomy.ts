@@ -1,3 +1,9 @@
+/**
+ * 需求/设计子系统分类。
+ *
+ * 根据带编号的章节路径统计，让 LLM 归纳少量子系统类别并建立路径映射。
+ */
+
 import type { SubsystemCategory } from "../types.js";
 import type { LlmClient } from "./client.js";
 import { cleanText } from "../util/text.js";
@@ -45,6 +51,11 @@ function pointChapterPath(point: TaxonomyPoint): string[] {
   return point.chapter ? point.chapter.split(" / ").filter(Boolean) : ["未分类"];
 }
 
+/**
+ * 从章节路径归纳子系统类别。
+ *
+ * 统计路径、调用 LLM、校验类别和路径映射，并限制类别数量。
+ */
 export async function generateSubsystemTaxonomy(
   points: TaxonomyPoint[],
   client: LlmClient,

@@ -1,3 +1,9 @@
+/**
+ * 启发式评价命令行工具。
+ *
+ * 不调用 LLM，直接跑规则评价并输出结果。
+ */
+
 import { resolve } from "node:path";
 import { parseDocxFile } from "../parsers/docx.js";
 import { parseRequirements } from "../parsers/requirements.js";

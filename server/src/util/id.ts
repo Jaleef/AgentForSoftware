@@ -1,3 +1,9 @@
+/**
+ * ID、哈希与时间工具。
+ *
+ * 生成带前缀的随机 ID、sha256、ISO 时间和展示时间。
+ */
+
 import { createHash, randomBytes } from "node:crypto";
 
 export function newId(prefix: string): string {

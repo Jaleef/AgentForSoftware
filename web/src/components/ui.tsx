@@ -1,6 +1,17 @@
+/**
+ * 共享 UI 组件。
+ *
+ * 提供 PageHeader、Card、Button、Tag、Spinner、ProgressBar 等基础组件。
+ */
+
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { IconAlert, IconCheck, IconRefresh } from "./Icons";
 
+/**
+ * 页面标题区。
+ *
+ * 统一页面 eyebrow、标题、副标题和右侧操作布局。
+ */
 export function PageHeader({
   title,
   subtitle,
@@ -22,6 +33,11 @@ export function PageHeader({
   );
 }
 
+/**
+ * 通用卡片容器。
+ *
+ * 支持可选的 section label、标题和右上角操作。
+ */
 export function Card({
   label,
   title,
@@ -55,6 +71,11 @@ export function Card({
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "soft";
 
+/**
+ * 通用按钮。
+ *
+ * 统一 primary/secondary/ghost/danger 等视觉变体和图标布局。
+ */
 export function Button({
   variant = "secondary",
   size = "md",
@@ -201,6 +222,11 @@ export function StatusPill({ status }: { status: string }) {
   return <Tag tone={item.tone as "blue" | "green" | "amber" | "red" | "purple" | "gray" | "cyan"}>{item.label}</Tag>;
 }
 
+/**
+ * 提示条。
+ *
+ * 用于成功、警告、错误和普通信息的页面级反馈。
+ */
 export function Notice({
   tone = "blue",
   icon,

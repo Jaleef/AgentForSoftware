@@ -1,3 +1,9 @@
+/**
+ * 最小 ZIP 读取器。
+ *
+ * 解压 DOCX 中的 document.xml、styles.xml 和 docProps，不依赖外部二进制。
+ */
+
 import { inflateRawSync } from "node:zlib";
 
 interface ZipEntry {

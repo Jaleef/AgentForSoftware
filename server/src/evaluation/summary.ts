@@ -1,3 +1,9 @@
+/**
+ * 评价结果汇总。
+ *
+ * 计算覆盖率、一致性得分、子系统/类型分桶、风险等级和门禁结论。
+ */
+
 import type {
   CampaignSummary,
   DesignUnit,
@@ -17,6 +23,11 @@ const SCORE_WEIGHT: Record<RelationStatus, number> = {
   unknown: 50,
 };
 
+/**
+ * 根据状态和层级计算风险等级。
+ *
+ * 功能/接口/数据等关键需求缺失为 P0，其余非通过项为 P1/P2。
+ */
 export function severityFor(status: RelationStatus, level: RelationLevel, sourceType: string): "P0" | "P1" | "P2" | "none" {
   if (status === "satisfied" || status === "unknown") return "none";
   if (status === "partial") return "P1";
@@ -28,9 +39,22 @@ export function severityFor(status: RelationStatus, level: RelationLevel, source
   return "P1";
 }
 
+function relationScore(relation: Relation): number {
+  // Requirement→design partial coverage should reflect how many obligations
+  // are actually covered (0-100), not a flat 60 for every partial relation.
+  if (
+    relation.level === "requirement_design" &&
+    typeof relation.coverageRatio === "number" &&
+    (relation.status === "satisfied" || relation.status === "partial")
+  ) {
+    return Math.max(0, Math.min(1, relation.coverageRatio)) * 100;
+  }
+  return SCORE_WEIGHT[relation.status];
+}
+
 function bucketScore(relations: Relation[]): number {
   if (!relations.length) return 0;
-  const sum = relations.reduce((acc, r) => acc + SCORE_WEIGHT[r.status], 0) / relations.length;
+  const sum = relations.reduce((acc, relation) => acc + relationScore(relation), 0) / relations.length;
   return Math.round(sum * 10) / 10;
 }
 
@@ -55,6 +79,11 @@ function buildBuckets(relations: Relation[], keyOf: (r: Relation) => string): Sc
     .sort((a, b) => b.total - a.total);
 }
 
+/**
+ * 根据关系列表计算评价总览。
+ *
+ * 计算覆盖率、得分、分子系统/类型分桶、风险统计和门禁结论。
+ */
 export function computeSummary(
   relations: Relation[],
   designUnits: DesignUnit[],
@@ -72,8 +101,22 @@ export function computeSummary(
   const satisfiedIn = (list: Relation[]): number => list.filter((r) => r.status === "satisfied").length;
   const partialIn = (list: Relation[]): number => list.filter((r) => r.status === "partial").length;
 
+  // Prefer obligation-level union coverage when present; legacy relations fall
+  // back to the satisfied / partial status weights.
+  const coverageRatioOf = (relation: Relation): number => {
+    if (typeof relation.coverageRatio === "number") {
+      return Math.max(0, Math.min(1, relation.coverageRatio));
+    }
+    if (relation.status === "satisfied") return 1;
+    if (relation.status === "partial") return 0.5;
+    return 0;
+  };
   const requirementCoverage = rd.length
-    ? Math.round(((satisfiedIn(rd) + 0.5 * partialIn(rd)) / Math.max(requirementCount, rd.length)) * 1000) / 10
+    ? Math.round(
+        (rd.reduce((sum, relation) => sum + coverageRatioOf(relation), 0) /
+          Math.max(requirementCount, rd.length)) *
+          1000,
+      ) / 10
     : 0;
   const designCoverage = dc.length
     ? Math.round(((satisfiedIn(dc) + 0.5 * partialIn(dc)) / Math.max(designUnits.length, dc.length)) * 1000) / 10

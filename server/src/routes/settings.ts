@@ -1,3 +1,9 @@
+/**
+ * LLM 设置 API。
+ *
+ * 读取/保存模型配置、连接测试，并处理开发环境 .env 接管逻辑。
+ */
+
 import { Router } from "express";
 import type { LlmSettings } from "../types.js";
 import {
@@ -43,6 +49,11 @@ settingsRouter.get("/settings", (_req, res) => {
   res.json(response());
 });
 
+/**
+ * 保存 LLM 设置。
+ *
+ * 校验 URL/模型，处理 API Key 保留和开发环境 .env 接管。
+ */
 settingsRouter.put("/settings", (req, res) => {
   if (isEnvActive()) {
     res.status(409).json({

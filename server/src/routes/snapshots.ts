@@ -1,3 +1,9 @@
+/**
+ * 代码快照 API。
+ *
+ * 登记代码目录快照、读取文件符号和删除快照。
+ */
+
 import { Router } from "express";
 import { buildCodeTree, scanCodeSnapshot } from "../parsers/code.js";
 import { getStore, mutateStore } from "../store.js";
@@ -28,6 +34,11 @@ function snapshotTree(snapshot: CodeSnapshot) {
   return buildCodeTree(lightweight);
 }
 
+/**
+ * 登记代码快照。
+ *
+ * 扫描代码目录，保存符号、路由、模型和 Git commit。
+ */
 snapshotsRouter.post("/projects/:projectId/snapshots", async (req, res) => {
   const projectId = req.params.projectId;
   const store = await getStore();

@@ -1,3 +1,9 @@
+/**
+ * JSON 文件持久化与设置存储。
+ *
+ * 维护项目、文档、快照、评价任务和 LLM 设置，串行化写入并做密钥脱敏。
+ */
+
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, copyFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -61,6 +67,11 @@ function loadSync(): StoreData {
   }
 }
 
+/**
+ * 读取内存中的全局数据仓库。
+ *
+ * 首次访问时从 data/store.json 加载，并在损坏时备份。
+ */
 export async function getStore(): Promise<StoreData> {
   if (!cache) cache = loadSync();
   return cache;
@@ -73,6 +84,11 @@ function persist(data: StoreData): void {
   renameSync(tmp, storeFile);
 }
 
+/**
+ * 串行修改并持久化全局数据仓库。
+ *
+ * 所有写操作进入队列，避免并发覆盖 JSON 文件。
+ */
 export function mutateStore<T>(fn: (data: StoreData) => T | Promise<T>): Promise<T> {
   const run = async (): Promise<T> => {
     const data = await getStore();

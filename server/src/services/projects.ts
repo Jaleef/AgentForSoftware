@@ -1,3 +1,9 @@
+/**
+ * 项目聚合查询服务。
+ *
+ * 汇总最新文档、代码快照、评价历史和项目概览。
+ */
+
 import type { Campaign, CodeSnapshot, Project, StoredDocument, StoreData } from "../types.js";
 
 export function latestDoc(data: StoreData, projectId: string, kind: "srs" | "sdd"): StoredDocument | undefined {
@@ -18,6 +24,11 @@ export function projectCampaigns(data: StoreData, projectId: string): Campaign[]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+/**
+ * 生成项目列表摘要。
+ *
+ * 汇总最新需求/设计文档、代码快照和评价任务数量。
+ */
 export function summarizeProject(data: StoreData, project: Project) {
   const srs = latestDoc(data, project.id, "srs");
   const sdd = latestDoc(data, project.id, "sdd");
@@ -81,6 +92,11 @@ export function summarizeProject(data: StoreData, project: Project) {
   };
 }
 
+/**
+ * 生成项目详情聚合视图。
+ *
+ * 合并文档摘要、代码快照、统计和评价历史。
+ */
 export function projectOverview(data: StoreData, project: Project) {
   return summarizeProject(data, project);
 }

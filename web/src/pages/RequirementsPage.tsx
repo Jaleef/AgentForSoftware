@@ -1,3 +1,9 @@
+/**
+ * 需求结构页面。
+ *
+ * 展示需求单元树/详情、义务、来源、审核，并支持手工新增/删除需求单元。
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, percent } from "../api";
@@ -36,6 +42,11 @@ const emptyManualDraft: ManualRequirementDraft = {
   sourceId: "",
 };
 
+/**
+ * 需求结构页面入口。
+ *
+ * 负责筛选、分组树、详情审核、手工新增/删除和 LLM 整理轮询。
+ */
 export function RequirementsPage() {
   const { projectId = "" } = useParams();
   const navigate = useNavigate();
@@ -520,6 +531,11 @@ export function RequirementsPage() {
   );
 }
 
+/**
+ * 需求单元详情面板。
+ *
+ * 展示原文、义务、来源、置信度和审核操作。
+ */
 function RequirementDetail({
   unit,
   projectId,

@@ -1,3 +1,9 @@
+/**
+ * 本地混合检索与候选打分。
+ *
+ * 把需求、设计单元和代码符号转成 token，计算相似度并生成 Top N 候选。
+ */
+
 import type { CodeSnapshot, CodeSymbol, DesignUnit, RequirementUnit } from "../types.js";
 import { jaccard, overlapScore, tokenSet, tokenize } from "../util/text.js";
 
@@ -31,6 +37,11 @@ export function designSearchText(unit: DesignUnit): string {
     .join(" ");
 }
 
+/**
+ * 为设计单元建立可复用的 token 索引。
+ *
+ * 索引字段包括名称、摘要、描述、接口、输入输出、义务、关键词、字段和子系统。
+ */
 export function buildDesignIndex(units: DesignUnit[]): DesignIndexEntry[] {
   return units.map((unit) => {
     const text = designSearchText(unit);
@@ -39,14 +50,24 @@ export function buildDesignIndex(units: DesignUnit[]): DesignIndexEntry[] {
 }
 
 function typeAffinity(requirementType: string, designType: string): number {
-  if (requirementType === "功能需求") return designType === "子功能" || designType === "模块" ? 0.12 : 0;
-  if (requirementType === "页面/人机交互需求") return designType === "页面" ? 0.26 : designType === "子功能" ? 0.04 : 0;
+  if (requirementType === "功能需求") {
+    return designType === "子功能" || designType === "模块" ? 0.12 : 0;
+  }
+  if (requirementType === "页面/人机交互需求") {
+    return designType === "页面" ? 0.26 : designType === "子功能" ? 0.04 : 0;
+  }
   if (requirementType === "数据需求" || requirementType === "元数据需求") {
     return designType === "数据表" ? 0.24 : designType === "子功能" ? 0.06 : 0;
   }
-  if (requirementType === "接口需求") return designType === "子功能" || designType === "模块" ? 0.12 : 0;
-  if (requirementType === "性能需求") return designType === "模块" || designType === "子功能" ? 0.08 : 0;
-  if (requirementType === "设计实现约束") return designType === "模块" || designType === "子功能" ? 0.06 : 0;
+  if (requirementType === "接口需求") {
+    return designType === "子功能" || designType === "模块" ? 0.12 : 0;
+  }
+  if (requirementType === "性能需求") {
+    return designType === "模块" || designType === "子功能" ? 0.08 : 0;
+  }
+  if (requirementType === "设计实现约束") {
+    return designType === "模块" || designType === "子功能" ? 0.06 : 0;
+  }
   return 0.05;
 }
 
@@ -55,6 +76,11 @@ export interface RankedDesign {
   score: number;
 }
 
+/**
+ * 为一条需求排序设计候选。
+ *
+ * 融合加权 token 覆盖率、Jaccard、类型亲和度、同子系统加分和标题重合度。
+ */
 export function rankDesignCandidates(
   requirement: RequirementUnit,
   index: DesignIndexEntry[],
@@ -64,6 +90,14 @@ export function rankDesignCandidates(
     `${requirement.title} ${requirement.description} ${requirement.detail} ${requirement.summary} ${requirement.obligations.join(" ")} ${requirement.keywords.join(" ")}`,
   );
   const titleTokens = tokenSet(`${requirement.title} ${requirement.keywords.join(" ")}`);
+  // 给候选设计单元打分，综合考虑需求与设计的文本相似度、类型匹配、子系统匹配等因素
+  /**
+   * 候选分 = 加权 token 覆盖率 × 0.68
+              +Jaccard × 0.22
+              + 类型亲和度
+              + 同子系统加分
+              + 标题/名称重合度 × 0.14
+   */
   const scored = index.map((entry) => {
     const base = overlapScore(reqTokens, entry.tokens) * 0.68 + jaccard(reqTokens, entry.tokens) * 0.22;
     let bonus = typeAffinity(requirement.type, entry.unit.type);
@@ -75,6 +109,11 @@ export function rankDesignCandidates(
   return scored.slice(0, limit);
 }
 
+/**
+ * 为代码快照建立符号检索索引。
+ *
+ * 合并符号名、签名、文件路径和代码片段 token。
+ */
 export function buildSymbolIndex(snapshot: CodeSnapshot): SymbolIndexEntry[] {
   const entries: SymbolIndexEntry[] = [];
   for (const file of snapshot.files) {
@@ -135,6 +174,11 @@ export interface RankedSymbol {
   score: number;
 }
 
+/**
+ * 为一个设计单元排序代码符号候选。
+ *
+ * 结合文本、代码片段、接口标识符、模型/路由类型和同文件配额。
+ */
 export function rankCodeCandidates(
   design: DesignUnit,
   index: SymbolIndexEntry[],

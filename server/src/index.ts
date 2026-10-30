@@ -1,3 +1,9 @@
+/**
+ * Express 服务入口。
+ *
+ * 挂载 API 路由、静态前端、健康检查和统一错误处理。
+ */
+
 import cors from "cors";
 import express from "express";
 import multer from "multer";

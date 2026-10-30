@@ -1,3 +1,9 @@
+/**
+ * 文档、需求单元、设计单元 API。
+ *
+ * 上传/重解析/LLM 整理文档，以及需求和设计单元的人工新增、删除、审核。
+ */
+
 import { Router } from "express";
 import multer from "multer";
 import { existsSync, unlinkSync } from "node:fs";
@@ -28,6 +34,11 @@ function requireDocStore(docId: string) {
   return getStore().then((data) => data.documents.find((d) => d.id === docId));
 }
 
+/**
+ * 上传并解析 DOCX 文档。
+ *
+ * 保存原文件，解析需求/设计点，必要时启动 LLM 整理。
+ */
 documentsRouter.post("/projects/:projectId/documents", upload.single("file"), async (req, res) => {
   const projectId = req.params.projectId;
   const data = await getStore();
@@ -124,6 +135,11 @@ documentsRouter.delete("/projects/:projectId/documents/:docId", async (req, res)
   res.json({ ok: true });
 });
 
+/**
+ * 重新拆分文档。
+ *
+ * 重新抽取需求/设计点，保留人工单元并刷新统计。
+ */
 documentsRouter.post("/projects/:projectId/documents/:docId/reparse", async (req, res) => {
   const doc = await requireDocStore(req.params.docId);
   if (!doc || doc.projectId !== req.params.projectId) {
@@ -150,6 +166,11 @@ documentsRouter.post("/projects/:projectId/documents/:docId/reparse", async (req
   }
 });
 
+/**
+ * 启动文档 LLM 整理。
+ *
+ * 对需求/设计候选做判定、子系统分类和单元生成。
+ */
 documentsRouter.post("/projects/:projectId/documents/:docId/enrich", async (req, res) => {
   const doc = await requireDocStore(req.params.docId);
   if (!doc || doc.projectId !== req.params.projectId) {
@@ -172,6 +193,11 @@ documentsRouter.post("/projects/:projectId/documents/:docId/enrich", async (req,
   res.json({ ok: true, status: "enriching" });
 });
 
+/**
+ * 手工新增需求单元。
+ *
+ * 校验类型并生成 SRS-MAN 编号。
+ */
 documentsRouter.post("/projects/:projectId/requirements", async (req, res) => {
   const projectId = req.params.projectId;
   const data = await getStore();
@@ -257,6 +283,11 @@ documentsRouter.patch("/projects/:projectId/requirements/:code", async (req, res
   res.json(result);
 });
 
+/**
+ * 手工新增设计单元。
+ *
+ * 校验类型并生成 SDD-MAN 编号。
+ */
 documentsRouter.post("/projects/:projectId/design-units", async (req, res) => {
   const projectId = req.params.projectId;
   const data = await getStore();

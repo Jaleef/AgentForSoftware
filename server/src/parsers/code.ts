@@ -1,3 +1,9 @@
+/**
+ * 代码快照静态解析器。
+ *
+ * 遍历源码，抽取文件、符号、路由、ORM/SQL 数据模型并构建代码树。
+ */
+
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
 import { extname, join, relative, resolve, sep } from "node:path";
@@ -154,6 +160,11 @@ function pushSymbol(list: SymbolDraft[], kind: CodeSymbolKind, name: string, lin
 
 const C_LIKE_EXT = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".java", ".kt", ".cs", ".go", ".rs"]);
 
+/**
+ * 从单个源码文件抽取符号。
+ *
+ * 根据文件扩展名选择 TS/JS、Java、Python、Go、SQL 等解析策略。
+ */
 export function extractSymbols(filePath: string, content: string): SymbolDraft[] {
   const ext = extname(filePath).toLowerCase();
   const lines = content.split(/\r?\n/);
@@ -319,6 +330,11 @@ function commitOf(root: string, provided: string): string {
   }
 }
 
+/**
+ * 扫描代码目录并生成代码快照。
+ *
+ * 限制文件大小和数量，抽取符号/路由/模型并记录 Git commit。
+ */
 export function scanCodeSnapshot(projectId: string, rootPathRaw: string, commitRaw = ""): CodeSnapshot {
   const root = resolve(rootPathRaw);
   if (!existsSync(root)) throw new Error(`代码目录不存在：${root}`);
@@ -394,6 +410,11 @@ export interface CodeTree {
   children?: CodeTree[];
 }
 
+/**
+ * 把代码文件列表组装成目录树。
+ *
+ * 按路径分段构建文件夹和文件节点，供前端目录树展示。
+ */
 export function buildCodeTree(files: CodeFile[]): CodeTree {
   const root: CodeTree = { name: "", path: "", type: "dir", fileCount: 0, children: [] };
   for (const file of files) {

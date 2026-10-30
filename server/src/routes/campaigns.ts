@@ -1,3 +1,9 @@
+/**
+ * 评价任务与报告 API。
+ *
+ * 创建/查询/取消评价任务，人工确认或驳回关系，导出报告。
+ */
+
 import { Router } from "express";
 import type { Campaign, RelationLevel } from "../types.js";
 import { getStore, mutateStore } from "../store.js";
@@ -11,6 +17,11 @@ export const campaignsRouter = Router();
 
 const LEVELS: RelationLevel[] = ["requirement_design", "design_code"];
 
+/**
+ * 创建评价任务。
+ *
+ * 校验文档/层级/子系统，写入 queued 任务并异步启动 runner。
+ */
 campaignsRouter.post("/projects/:projectId/campaigns", async (req, res) => {
   const projectId = req.params.projectId;
   const data = await getStore();
@@ -110,6 +121,11 @@ campaignsRouter.get("/projects/:projectId/campaigns", async (req, res) => {
   res.json({ campaigns });
 });
 
+/**
+ * 查询评价任务详情。
+ *
+ * 支持 statusOnly=1 的轻量轮询，避免重复传输完整关系列表。
+ */
 campaignsRouter.get("/projects/:projectId/campaigns/:campaignId", async (req, res) => {
   const data = await getStore();
   const campaign = data.campaigns.find((c) => c.id === req.params.campaignId && c.projectId === req.params.projectId);

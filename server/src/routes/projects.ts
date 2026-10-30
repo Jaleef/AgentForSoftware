@@ -1,3 +1,9 @@
+/**
+ * 项目 API。
+ *
+ * 项目列表、创建、详情和级联删除。
+ */
+
 import { Router } from "express";
 import { rmSync } from "node:fs";
 import { getStore, mutateStore, projectDir } from "../store.js";
@@ -15,6 +21,11 @@ projectsRouter.get("/projects", async (_req, res) => {
   res.json({ projects });
 });
 
+/**
+ * 创建项目。
+ *
+ * 写入项目基本信息并返回项目详情。
+ */
 projectsRouter.post("/projects", async (req, res) => {
   const name = String(req.body?.name ?? "").trim();
   const description = String(req.body?.description ?? "").trim();

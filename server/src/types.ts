@@ -1,3 +1,9 @@
+/**
+ * 前后端共享的核心 TypeScript 类型。
+ *
+ * 定义文档、需求点/单元、设计点/单元、代码快照、评价关系、覆盖矩阵和设置结构。
+ */
+
 export type DocumentKind = "srs" | "sdd";
 
 export type RequirementType =
@@ -312,6 +318,26 @@ export const RELATION_STATUS_LABEL: Record<RelationStatus, string> = {
   unknown: "待确认",
 };
 
+export type ObligationCoverageStatus = "covered" | "partial" | "conflicting" | "missing";
+
+export interface RelationObligation {
+  id: string;
+  text: string;
+  status: ObligationCoverageStatus;
+  coveredBy: string[];
+}
+
+export interface TargetCoverage {
+  targetCode: string;
+  targetName: string;
+  coveredObligationIds: string[];
+  partialObligationIds: string[];
+  conflictingObligationIds: string[];
+  contributionRatio: number;
+  evidence: string;
+  confidence: number;
+}
+
 export interface Relation {
   id: string;
   level: RelationLevel;
@@ -331,6 +357,9 @@ export interface Relation {
   method: "llm" | "heuristic";
   reviewStatus: "pending" | "accepted" | "rejected";
   reviewNote: string;
+  coverageRatio?: number;
+  targetCoverages?: TargetCoverage[];
+  obligations?: RelationObligation[];
 }
 
 export interface ScoreBucket {

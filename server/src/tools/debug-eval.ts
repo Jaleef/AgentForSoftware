@@ -1,3 +1,9 @@
+/**
+ * 评价调试脚本。
+ *
+ * 打印检索候选、评价关系和得分，便于本地排查。
+ */
+
 import { resolve } from "node:path";
 import { parseDocxFile } from "../parsers/docx.js";
 import { parseRequirements } from "../parsers/requirements.js";

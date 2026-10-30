@@ -1,3 +1,9 @@
+/**
+ * 前端 API 数据类型。
+ *
+ * 镜像后端接口结构，定义需求、设计、代码、评价、报告和设置类型。
+ */
+
 export type DocumentKind = "srs" | "sdd";
 
 export interface ProjectSummary {
@@ -260,6 +266,26 @@ export interface SnapshotMeta {
 
 export type RelationStatus = "satisfied" | "partial" | "missing" | "mismatch" | "divergent" | "unknown";
 
+export type ObligationCoverageStatus = "covered" | "partial" | "conflicting" | "missing";
+
+export interface RelationObligation {
+  id: string;
+  text: string;
+  status: ObligationCoverageStatus;
+  coveredBy: string[];
+}
+
+export interface TargetCoverage {
+  targetCode: string;
+  targetName: string;
+  coveredObligationIds: string[];
+  partialObligationIds: string[];
+  conflictingObligationIds: string[];
+  contributionRatio: number;
+  evidence: string;
+  confidence: number;
+}
+
 export interface Relation {
   id: string;
   level: "requirement_design" | "design_code";
@@ -279,6 +305,9 @@ export interface Relation {
   method: "llm" | "heuristic";
   reviewStatus: "pending" | "accepted" | "rejected";
   reviewNote: string;
+  coverageRatio?: number;
+  targetCoverages?: TargetCoverage[];
+  obligations?: RelationObligation[];
 }
 
 export interface ScoreBucket {

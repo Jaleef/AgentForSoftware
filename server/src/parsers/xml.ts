@@ -1,3 +1,9 @@
+/**
+ * 最小 XML DOM 解析器。
+ *
+ * 为 DOCX/XML 读取提供容错节点、属性、子节点和文本访问。
+ */
+
 export interface XmlNode {
   name: string;
   attrs: Record<string, string>;

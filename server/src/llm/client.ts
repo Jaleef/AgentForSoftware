@@ -1,3 +1,9 @@
+/**
+ * OpenAI 兼容 LLM 客户端。
+ *
+ * 封装 Chat Completions、JSON 解析、超时/重试和并发控制。
+ */
+
 import type { LlmSettings } from "../types.js";
 import { readSettings } from "../store.js";
 import { safeJsonParse } from "../util/text.js";
@@ -59,6 +65,11 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+/**
+ * OpenAI 兼容模型客户端。
+ *
+ * 封装配置、Chat Completions 请求、超时重试和 JSON 解析。
+ */
 export class LlmClient {
   private settings: LlmSettings;
   private jsonModeSupported = true;
@@ -75,6 +86,11 @@ export class LlmClient {
     return this.settings.mock;
   }
 
+/**
+ * 调用 OpenAI 兼容 Chat Completions 接口。
+ *
+ * 处理请求体、超时、重试、JSON 模式降级和取消信号。
+ */
   async chat(messages: ChatMessage[], options: ChatOptions = {}): Promise<string> {
     if (this.settings.mock) {
       return "MOCK_OK";
@@ -159,6 +175,11 @@ export class LlmClient {
     throw lastError ?? new LlmError("LLM 调用失败");
   }
 
+/**
+ * 调用模型并要求返回 JSON。
+ *
+ * 去掉 Markdown 代码围栏后解析，解析失败抛出明确错误。
+ */
   async chatJson<T>(messages: ChatMessage[], options: ChatOptions = {}): Promise<T> {
     const content = await this.chat(messages, { ...options, json: true });
     const cleaned = content
@@ -185,6 +206,11 @@ export class LlmClient {
   }
 }
 
+/**
+ * 按并发上限执行异步任务。
+ *
+ * 保持结果顺序，并支持 AbortSignal 取消。
+ */
 export async function mapLimit<T, R>(
   items: T[],
   limit: number,

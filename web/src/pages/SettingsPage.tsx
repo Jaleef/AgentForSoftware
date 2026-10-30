@@ -1,3 +1,9 @@
+/**
+ * LLM 设置页面。
+ *
+ * 展示/修改模型配置、测试连接，并提示开发环境 .env 接管状态。
+ */
+
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useResource } from "../hooks";
@@ -36,6 +42,11 @@ const EMPTY: FormState = {
   mock: false,
 };
 
+/**
+ * LLM 设置页面入口。
+ *
+ * 区分开发环境 .env 接管和生产设置页写入，并支持连接测试。
+ */
 export function SettingsPage() {
   const resource = useResource(() => api.getSettings(), []);
   const [form, setForm] = useState<FormState>(EMPTY);

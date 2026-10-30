@@ -1,3 +1,9 @@
+/**
+ * 设计点判定与设计单元生成 Agent。
+ *
+ * 对数据库表/文本候选做 LLM 判定，再生成设计单元、义务和关键词。
+ */
+
 import type { DesignPoint, DesignUnit, DesignUnitType, SubsystemCategory } from "../types.js";
 import type { LlmClient } from "./client.js";
 import { mapLimit } from "./client.js";
@@ -255,6 +261,11 @@ export async function generateDesignUnits(
   return { units: assignDesignCodes(units), warnings, usedLlm };
 }
 
+/**
+ * 执行完整设计拆分 Agent。
+ *
+ * 依次做候选判定、子系统分类、设计单元生成，并汇总警告。
+ */
 export async function runDesignAgent(
   docId: string,
   points: DesignPoint[],

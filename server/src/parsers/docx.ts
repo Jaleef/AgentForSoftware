@@ -1,3 +1,9 @@
+/**
+ * DOCX/OOXML 正文解析器。
+ *
+ * 读取段落、标题、表格、合并单元格、分页标记和页码/行号估算。
+ */
+
 import { readFileSync } from "node:fs";
 import { ZipArchive } from "./zip.js";
 import {
@@ -160,6 +166,11 @@ function visibleLength(text: string): number {
   return n;
 }
 
+/**
+ * 解析 DOCX 二进制为结构化正文。
+ *
+ * 读取 document.xml/styles.xml，构建段落、标题、表格和页码行号。
+ */
 export function parseDocxBuffer(buffer: Buffer): DocxDocument {
   const warnings: string[] = [];
   let archive: ZipArchive;
@@ -315,6 +326,11 @@ export function expandedRow(row: DocxRow): { texts: string[]; colSpans: number[]
   return { texts, colSpans };
 }
 
+/**
+ * 把表格展开成二维文本矩阵。
+ *
+ * 合并单元格按起始列展开，便于后续按列读取。
+ */
 export function tableRows(table: DocxTable): string[][] {
   return table.rows.map((row) => expandedRow(row).texts);
 }
@@ -350,6 +366,11 @@ export function tablePairs(table: DocxTable): Array<{ label: string; value: stri
   return pairs;
 }
 
+/**
+ * 判断单元格是否像定义式表格的标签。
+ *
+ * 会忽略“需求 ID”这类标签内部空格。
+ */
 export function isLikelyLabel(text: string): boolean {
   const t = normalizeLabel(text);
   if (!t || t.length > 16) return false;

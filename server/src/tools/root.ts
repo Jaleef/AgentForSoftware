@@ -1,3 +1,9 @@
+/**
+ * 工具脚本仓库根目录定位。
+ *
+ * 从当前文件向上寻找项目根目录，供 smoke/debug 工具使用。
+ */
+
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 

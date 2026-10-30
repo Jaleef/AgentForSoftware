@@ -1,3 +1,9 @@
+/**
+ * React 应用启动入口。
+ *
+ * 挂载根组件并加载全局样式。
+ */
+
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";

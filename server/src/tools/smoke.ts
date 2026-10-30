@@ -1,3 +1,9 @@
+/**
+ * 解析 smoke 测试。
+ *
+ * 解析示例需求/设计/代码并打印单元、候选和警告。
+ */
+
 import { resolve } from "node:path";
 import { parseDocxFile } from "../parsers/docx.js";
 import { parseRequirements } from "../parsers/requirements.js";

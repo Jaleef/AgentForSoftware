@@ -1,3 +1,9 @@
+/**
+ * 评价报告导出服务。
+ *
+ * 把 Campaign 和 Relation 转成 Markdown/CSV 报告。
+ */
+
 import type { Campaign, DocumentKind, StoredDocument } from "../types.js";
 
 function pct(n: number): string {
@@ -17,6 +23,11 @@ function esc(value: string): string {
   return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 }
 
+/**
+ * 生成 Markdown 评价报告。
+ *
+ * 包含总览、分桶、逐条关系、主要问题和覆盖比例。
+ */
 export function campaignMarkdown(
   campaign: Campaign,
   projectName: string,
@@ -61,13 +72,14 @@ export function campaignMarkdown(
   }
   lines.push("## 明细");
   lines.push("");
-  lines.push("| 层级 | 来源 | 状态 | 置信度 | 目标 | 说明 |");
-  lines.push("| --- | --- | --- | ---: | --- | --- |");
+  lines.push("| 层级 | 来源 | 状态 | 联合覆盖 | 置信度 | 目标 | 说明 |");
+  lines.push("| --- | --- | --- | ---: | ---: | --- | --- |");
   for (const relation of campaign.relations) {
     const level = relation.level === "requirement_design" ? "需求→设计" : "设计→代码";
     const targets = relation.targetNames.length ? relation.targetNames.join("；") : "—";
+    const coverage = typeof relation.coverageRatio === "number" ? pct(relation.coverageRatio * 100) : "—";
     lines.push(
-      `| ${level} | ${esc(relation.sourceCode)} ${esc(relation.sourceName)} | ${STATUS_TEXT[relation.status] ?? relation.status} | ${(relation.confidence * 100).toFixed(0)}% | ${esc(targets)} | ${esc(relation.rationale)} |`,
+      `| ${level} | ${esc(relation.sourceCode)} ${esc(relation.sourceName)} | ${STATUS_TEXT[relation.status] ?? relation.status} | ${coverage} | ${(relation.confidence * 100).toFixed(0)}% | ${esc(targets)} | ${esc(relation.rationale)} |`,
     );
   }
   lines.push("");
@@ -81,7 +93,11 @@ export function campaignMarkdown(
   for (const relation of issues) {
     lines.push(`### [${relation.severity}] ${relation.sourceCode} ${relation.sourceName}`);
     lines.push("");
-    lines.push(`- 判定：${STATUS_TEXT[relation.status] ?? relation.status}（置信度 ${(relation.confidence * 100).toFixed(0)}%）`);
+    lines.push(
+      `- 判定：${STATUS_TEXT[relation.status] ?? relation.status}（联合覆盖 ${
+        typeof relation.coverageRatio === "number" ? pct(relation.coverageRatio * 100) : "—"
+      }，置信度 ${(relation.confidence * 100).toFixed(0)}%）`,
+    );
     if (relation.targetNames.length) lines.push(`- 关联：${relation.targetNames.join("；")}`);
     lines.push(`- 依据：${relation.rationale}`);
     if (relation.evidence) lines.push(`- 证据：${relation.evidence}`);
@@ -95,6 +111,11 @@ export function campaignMarkdown(
   return lines.join("\n");
 }
 
+/**
+ * 生成 CSV 评价报告。
+ *
+ * 每条关系一行，包含状态、覆盖率、目标、证据和审核状态。
+ */
 export function campaignCsv(campaign: Campaign): string {
   const header = [
     "id",
@@ -106,6 +127,7 @@ export function campaignCsv(campaign: Campaign): string {
     "status",
     "severity",
     "confidence",
+    "coverageRatio",
     "targetCodes",
     "targetNames",
     "rationale",
@@ -126,6 +148,7 @@ export function campaignCsv(campaign: Campaign): string {
       r.status,
       r.severity,
       String(r.confidence),
+      r.coverageRatio ?? "",
       r.targetCodes.join(";"),
       r.targetNames.join(";"),
       r.rationale,

@@ -1943,6 +1943,153 @@ p {
   cursor: default;
 }
 
+.chip-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  font: inherit;
+  appearance: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.chip-link:hover {
+  background: var(--primary-soft);
+  border-color: #cfdaff;
+  color: #3355e8;
+}
+
+.chip-code {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  color: var(--muted-2);
+  font-size: 9.5px;
+}
+
+.chip-coverage {
+  font-size: 9px;
+  color: #5570d8;
+  background: #eef2ff;
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.coverage-banner {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 9px 11px;
+  border: 1px solid #dbe4ff;
+  border-radius: 9px;
+  background: #f7f9ff;
+  color: #3d4b6b;
+}
+
+.coverage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.coverage-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.coverage-row.coverage-missing {
+  background: #fbfbfd;
+}
+
+.coverage-row.coverage-conflicting {
+  border-color: #f0c9c9;
+  background: #fffafa;
+}
+
+.coverage-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.coverage-text {
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.coverage-id {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  color: var(--muted-2);
+  margin-right: 5px;
+  font-size: 9.5px;
+}
+
+.design-peek {
+  position: fixed;
+  left: 268px;
+  top: 84px;
+  bottom: 24px;
+  z-index: 1200;
+  width: min(620px, 42vw);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.24);
+}
+
+.design-peek-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  background: #fbfcff;
+}
+
+.design-peek-head h3 {
+  margin: 4px 0;
+  font-size: 18px;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.design-peek-body {
+  padding: 16px 18px 22px;
+  overflow: auto;
+}
+
+.design-peek-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+@media (max-width: 900px) {
+  .design-peek {
+    left: 12px;
+    right: 12px;
+    top: 72px;
+    bottom: 12px;
+    width: auto;
+  }
+}
+
+.chip-link:hover .chip-code {
+  color: #5570d8;
+}
+
 .campaign-chips {
   display: flex;
   flex-direction: column;

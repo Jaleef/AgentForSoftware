@@ -1,3 +1,9 @@
+/**
+ * 需求点判定与需求单元生成 Agent。
+ *
+ * 对文本候选做 LLM 判定，再生成需求单元、义务和关键词。
+ */
+
 import type { RequirementPoint, RequirementType, RequirementUnit, SubsystemCategory } from "../types.js";
 import { REQUIREMENT_TYPES } from "../types.js";
 import type { LlmClient } from "./client.js";

@@ -1,3 +1,9 @@
+/**
+ * 设计文档解析与设计点抽取。
+ *
+ * 结构化设计表直接生成规则点；数据库表和文本叶子章节作为 LLM 候选；同时生成规则回退单元。
+ */
+
 import type {
   DbField,
   DesignPoint,
@@ -395,6 +401,11 @@ function headingStackTitle(path: string[]): string {
   return last.replace(/^\d+(?:\.\d+)*\s*/, "");
 }
 
+/**
+ * 把设计点转换为设计单元。
+ *
+ * 保留接口、输入输出和字段；子系统由外部统一映射提供。
+ */
 export function designUnitFromPoint(
   point: DesignPoint,
   fields: {
@@ -488,6 +499,11 @@ export function buildDesignStats(doc: DocxDocument, units: DesignUnit[]): Docume
   };
 }
 
+/**
+ * 设计文档解析入口。
+ *
+ * 先抽设计点，再生成无 LLM 时的规则回退单元和统计信息。
+ */
 export function parseDesign(doc: DocxDocument): ParsedDesign {
   const extraction = extractDesignPoints(doc);
   const units = buildFallbackDesignUnits(extraction.points);

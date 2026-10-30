@@ -1,3 +1,9 @@
+/**
+ * 开发环境 .env 读取与 LLM 配置覆盖。
+ *
+ * 只影响开发进程；生产构建仍以设置页/运行环境配置为准。
+ */
+
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -121,6 +127,11 @@ function numberValue(value: string | undefined): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+/**
+ * 把开发环境 `.env` 中的 LLM 配置合并到设置对象。
+ *
+ * 只覆盖显式配置的字段；生产构建不会走这里。
+ */
 export function applyEnvOverrides(base: LlmSettings): LlmSettings {
   if (!envActive) return base;
   const next: LlmSettings = { ...base };

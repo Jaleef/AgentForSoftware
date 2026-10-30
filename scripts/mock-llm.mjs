@@ -172,40 +172,54 @@ function handleRequirementEval(payload) {
     items: items.map((entry) => {
       const req = entry.requirement ?? {};
       const candidates = entry.candidates ?? [];
-      const nonFunctional = ["性能需求", "安全保密需求", "环境需求", "验收交付需求", "质量属性需求"].includes(req.type);
-      if (!candidates.length) {
+      const obligations = Array.isArray(req.obligations) ? req.obligations : [];
+      if (!candidates.length || !obligations.length) {
         return {
           requirementCode: req.code,
-          status: "missing",
-          targetCodes: [],
-          confidence: 0.8,
-          rationale: "mock: 候选设计为空，判定为缺失。",
-          evidence: "",
-          gaps: ["未找到对应设计单元"],
-          suggestions: "补充设计或更新需求归属。",
+          targetCoverages: [],
         };
       }
-      if (nonFunctional) {
+
+      // Mock intentionally splits obligations across two designs to exercise
+      // union coverage; a single candidate receives all obligations.
+      const split = candidates.length >= 2 && obligations.length >= 2;
+      if (!split) {
         return {
           requirementCode: req.code,
-          status: "partial",
-          targetCodes: [candidates[0].code],
-          confidence: 0.62,
-          rationale: "mock: 非功能需求仅找到部分支撑设计，需人工确认约束是否落实。",
-          evidence: candidates[0].summary ?? "",
-          gaps: ["非功能约束缺少可验证证据"],
-          suggestions: "补充性能/安全/验收相关的设计与测试证据。",
+          targetCoverages: [
+            {
+              designCode: candidates[0].code,
+              coveredObligations: obligations.map((item) => item.id),
+              partialObligations: [],
+              conflictingObligations: [],
+              evidence: String(candidates[0].description ?? "").slice(0, 100),
+              confidence: 0.88,
+            },
+          ],
         };
       }
+
+      const half = Math.ceil(obligations.length / 2);
       return {
         requirementCode: req.code,
-        status: "satisfied",
-        targetCodes: [candidates[0].code],
-        confidence: 0.88,
-        rationale: `mock: 设计「${candidates[0].name}」覆盖需求主要义务。`,
-        evidence: (candidates[0].description ?? "").slice(0, 100),
-        gaps: [],
-        suggestions: "",
+        targetCoverages: [
+          {
+            designCode: candidates[0].code,
+            coveredObligations: obligations.slice(0, half).map((item) => item.id),
+            partialObligations: [],
+            conflictingObligations: [],
+            evidence: String(candidates[0].description ?? "").slice(0, 100),
+            confidence: 0.9,
+          },
+          {
+            designCode: candidates[1].code,
+            coveredObligations: obligations.slice(half).map((item) => item.id),
+            partialObligations: [],
+            conflictingObligations: [],
+            evidence: String(candidates[1].description ?? "").slice(0, 100),
+            confidence: 0.82,
+          },
+        ],
       };
     }),
   };

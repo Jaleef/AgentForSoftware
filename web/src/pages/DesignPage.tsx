@@ -1,5 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+/**
+ * 设计结构页面。
+ *
+ * 展示设计单元树/卡片、设计详情、审核，并支持手工新增/删除设计单元。
+ */
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, percent } from "../api";
 import { useDebounced, useInterval, useResource } from "../hooks";
 import {
@@ -44,9 +50,17 @@ const emptyDesignDraft: ManualDesignDraft = {
   sourceId: "",
 };
 
+/**
+ * 设计结构页面入口。
+ *
+ * 负责树/卡片视图、详情审核、手工新增/删除和聚焦定位。
+ */
 export function DesignPage() {
   const { projectId = "" } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const focusCode = searchParams.get("focus") ?? "";
+  const appliedFocus = useRef<string | null>(null);
   const resource = useResource(() => api.getDocument(projectId, "sdd"), [projectId]);
   const doc = resource.data;
 
@@ -70,8 +84,24 @@ export function DesignPage() {
   const selected = units.find((unit) => unit.code === selectedCode) ?? units[0];
 
   useEffect(() => {
-    if (!selectedCode && units.length) setSelectedCode(units[0].code);
-  }, [units, selectedCode]);
+    if (!focusCode) {
+      appliedFocus.current = null;
+      return;
+    }
+    if (appliedFocus.current === focusCode || !units.length) return;
+    appliedFocus.current = focusCode;
+    if (units.some((unit) => unit.code === focusCode)) {
+      setSelectedCode(focusCode);
+    } else {
+      setNotice(`未找到设计单元 ${focusCode}，可能已重新拆分。`);
+    }
+  }, [focusCode, units]);
+
+  useEffect(() => {
+    if (!selectedCode && units.length && !(focusCode && units.some((unit) => unit.code === focusCode))) {
+      setSelectedCode(units[0].code);
+    }
+  }, [units, selectedCode, focusCode]);
 
   useInterval(
     () => {
@@ -570,6 +600,11 @@ export function DesignPage() {
   );
 }
 
+/**
+ * 设计单元详情面板。
+ *
+ * 展示描述、义务、接口、输入输出、字段和审核操作。
+ */
 function DesignDetail({
   unit,
   projectId,
