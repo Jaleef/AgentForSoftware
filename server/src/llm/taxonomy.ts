@@ -5,7 +5,7 @@
  */
 
 import type { SubsystemCategory } from "../types.js";
-import type { LlmClient } from "./client.js";
+import { mapLimit, type LlmClient } from "./client.js";
 import { cleanText } from "../util/text.js";
 
 export interface TaxonomyResult {
@@ -30,9 +30,20 @@ export interface TaxonomyPoint {
   text?: string;
 }
 
+interface TaxonomyCategoryRaw {
+  name?: string;
+  description?: string;
+}
+
+interface TaxonomyAssignmentRaw {
+  chapterPath?: string;
+  chapter?: string;
+  category?: string;
+}
+
 interface TaxonomyPayload {
-  categories?: Array<{ name?: string; description?: string }>;
-  assignments?: Array<{ chapterPath?: string; chapter?: string; category?: string }>;
+  categories?: TaxonomyCategoryRaw[];
+  assignments?: TaxonomyAssignmentRaw[];
 }
 
 const TAXONOMY_SYSTEM = `你是资深需求架构师。下面是从一份软件需求文档中统计出的章节路径（含编号）、需求点数量和样例标题。
@@ -87,7 +98,7 @@ export async function generateSubsystemTaxonomy(
       count: chapter.count,
       samples: chapter.samples,
     }));
-    const response = await client.chatJson<TaxonomyPayload>(
+    const response = await client.chatJson<TaxonomyPayload | TaxonomyCategoryRaw[] | TaxonomyAssignmentRaw[]>(
       [
         { role: "system", content: TAXONOMY_SYSTEM },
         { role: "user", content: `章节统计：\n${JSON.stringify(payload, null, 2)}` },
@@ -95,10 +106,40 @@ export async function generateSubsystemTaxonomy(
       { temperature: 0.1, maxTokens: 8192 },
     );
 
-    const rawCategories = Array.isArray(response.categories) ? response.categories : [];
+    // Some OpenAI-compatible models ignore the requested object envelope and
+    // return a bare array. Accept both shapes instead of discarding a valid
+    // taxonomy.
+    const rawArray = Array.isArray(response) ? response : [];
+    const arrayLooksLikeAssignments =
+      rawArray.length > 0 &&
+      rawArray.every(
+        (item) =>
+          typeof item === "object" &&
+          item !== null &&
+          ("chapterPath" in item || "chapter" in item || "category" in item),
+      );
+    const rawCategories: TaxonomyCategoryRaw[] = Array.isArray(response)
+      ? arrayLooksLikeAssignments
+        ? []
+        : (rawArray as TaxonomyCategoryRaw[])
+      : Array.isArray(response.categories)
+        ? response.categories
+        : [];
+    let rawAssignments: TaxonomyAssignmentRaw[] = Array.isArray(response)
+      ? arrayLooksLikeAssignments
+        ? (rawArray as TaxonomyAssignmentRaw[])
+        : []
+      : Array.isArray(response.assignments)
+        ? response.assignments
+        : [];
     let names: string[] = [];
     for (const category of rawCategories) {
       const name = cleanText(category.name || "").slice(0, 40);
+      if (name && !names.includes(name)) names.push(name);
+    }
+    // If the model returned assignments only, derive category names from them.
+    for (const assignment of rawAssignments) {
+      const name = cleanText(assignment.category || "").slice(0, 40);
       if (name && !names.includes(name)) names.push(name);
     }
     if (names.length > 10) {
@@ -110,10 +151,59 @@ export async function generateSubsystemTaxonomy(
       return { categories: [], mapping: new Map(), warnings, usedLlm: false };
     }
 
+    // DeepSeek sometimes returns only the category list and omits assignments.
+    // Ask a narrower question per batch; one large assignment object can be
+    // truncated before the closing brace and fail JSON parsing.
+    if (!rawAssignments.length && chapters.length) {
+      const batchSize = 40;
+      const assignmentBatches: Array<typeof limited> = [];
+      for (let start = 0; start < limited.length; start += batchSize) {
+        assignmentBatches.push(limited.slice(start, start + batchSize));
+      }
+      const batchResults = await mapLimit(
+        assignmentBatches,
+        3,
+        async (batch, batchIndex) => {
+          try {
+            const assignmentResponse = await client.chatJson<
+              TaxonomyPayload | TaxonomyAssignmentRaw[]
+            >(
+              [
+                {
+                  role: "system",
+                  content:
+                    "你是子系统分类助手。只能从给定的 categories 中为每个 chapterPath 选择一个 category。只输出 JSON：{\"assignments\":[{\"chapterPath\":\"...\",\"category\":\"...\"}]}。不要输出其他内容。",
+                },
+                {
+                  role: "user",
+                  content: `categories：\n${JSON.stringify(names, null, 2)}\n\nchapters：\n${JSON.stringify(
+                    batch.map((chapter) => chapter.chapterPath.join(" / ")),
+                    null,
+                    2,
+                  )}`,
+                },
+              ],
+              { temperature: 0, maxTokens: 4096 },
+            );
+            return Array.isArray(assignmentResponse)
+              ? (assignmentResponse as TaxonomyAssignmentRaw[])
+              : Array.isArray(assignmentResponse.assignments)
+                ? assignmentResponse.assignments
+                : [];
+          } catch (err) {
+            warnings.push(
+              `子系统章节映射第 ${batchIndex + 1} 批失败：${(err as Error).message}`,
+            );
+            return [];
+          }
+        },
+      );
+      rawAssignments = batchResults.flat();
+    }
+
     const allowed = new Set(names);
     const mapping = new Map<string, string>();
     const chapterPaths = new Map<string, string[]>();
-    const rawAssignments = Array.isArray(response.assignments) ? response.assignments : [];
     for (const assignment of rawAssignments) {
       const chapterPath = cleanText(assignment.chapterPath || assignment.chapter || "");
       const category = cleanText(assignment.category || "");

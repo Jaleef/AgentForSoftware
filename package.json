@@ -11,6 +11,8 @@
     "start": "node server/dist/index.js",
     "typecheck": "node scripts/typecheck.mjs",
     "smoke": "node server/node_modules/tsx/dist/cli.mjs server/src/tools/smoke.ts",
+    "retrieval:smoke": "node server/node_modules/tsx/dist/cli.mjs server/src/tools/hybrid-smoke.ts",
+    "agents:smoke": "node server/node_modules/tsx/dist/cli.mjs server/src/tools/agent-smoke.ts",
     "eval:heuristic": "node server/node_modules/tsx/dist/cli.mjs server/src/tools/evaluate-heuristic.ts",
     "mock:llm": "node scripts/mock-llm.mjs"
   },

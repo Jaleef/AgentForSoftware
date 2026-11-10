@@ -83,6 +83,15 @@ settingsRouter.put("/settings", (req, res) => {
 
 settingsRouter.post("/settings/test", async (req, res) => {
   const envActive = isEnvActive();
+  const meta = getEnvConfigInfo();
+  if (envActive && meta.envFileChanged) {
+    res.status(400).json({
+      error:
+        "检测到 .env 在服务启动后被修改；当前进程仍在使用启动时加载的旧配置。请重启 pnpm dev 后再测试。",
+      meta,
+    });
+    return;
+  }
   const incoming = (req.body?.llm ?? {}) as Partial<LlmSettings>;
   let merged: LlmSettings;
   if (envActive) {
@@ -93,8 +102,16 @@ settingsRouter.post("/settings/test", async (req, res) => {
     merged = sanitize(incoming, current);
     if (!incoming.apiKey) merged.apiKey = current.apiKey;
   }
+  const hint = merged.apiKey ? `${merged.apiKey.slice(0, 3)}••••${merged.apiKey.slice(-4)}` : "";
+  const source = envActive ? "env" : "settings";
   if (merged.mock) {
-    res.json({ ok: true, latencyMs: 0, message: "演示模式（Mock）已启用，不会访问真实模型服务。" });
+    res.json({
+      ok: true,
+      latencyMs: 0,
+      message: "演示模式（Mock）已启用，不会访问真实模型服务。",
+      source,
+      apiKeyHint: hint,
+    });
     return;
   }
   if (!merged.apiKey) {
@@ -108,8 +125,13 @@ settingsRouter.post("/settings/test", async (req, res) => {
   try {
     const client = new LlmClient(merged);
     const result = await client.testConnection();
-    res.json(result);
+    res.json({ ...result, source, apiKeyHint: hint });
   } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
+    const where = source === "env" ? ".env" : "设置页";
+    res.status(400).json({
+      error: `${(err as Error).message}（本次测试使用${where}配置，Key：${hint || "未配置"}）`,
+      source,
+      apiKeyHint: hint,
+    });
   }
 });

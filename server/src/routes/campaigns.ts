@@ -135,7 +135,13 @@ campaignsRouter.get("/projects/:projectId/campaigns/:campaignId", async (req, re
   }
   if (req.query.statusOnly === "1") {
     const { relations, ...rest } = campaign;
-    res.json({ campaign: { ...rest, relations: [] } });
+    res.json({
+      campaign: {
+        ...rest,
+        relations: [],
+        agentRuns: (rest.agentRuns ?? []).slice(-5),
+      },
+    });
     return;
   }
   res.json({ campaign });

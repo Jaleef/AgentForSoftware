@@ -230,6 +230,8 @@ export interface StoredDocument {
   outline: OutlineNode[];
   stats: DocumentStats;
   warnings: string[];
+  /** Recent agent executions for document enrichment audit. */
+  agentRuns?: AgentRun[];
 }
 
 export interface Project {
@@ -397,6 +399,26 @@ export interface CampaignSummary {
   };
 }
 
+export interface AgentRun {
+  id: string;
+  agent: string;
+  version: string;
+  stage: string;
+  status: "running" | "completed" | "failed" | "skipped";
+  startedAt: string;
+  finishedAt?: string;
+  model?: string;
+  promptVersion?: string;
+  inputHash?: string;
+  outputSummary?: string;
+  warnings: string[];
+  metrics?: {
+    llmCalls: number;
+    durationMs: number;
+  };
+  error?: string;
+}
+
 export interface Campaign {
   id: string;
   projectId: string;
@@ -420,6 +442,9 @@ export interface Campaign {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
+  /** "agent" for the main/sub-agent pipeline; absent means legacy evaluation. */
+  pipeline?: "legacy" | "agent";
+  agentRuns?: AgentRun[];
 }
 
 export interface LlmSettings {

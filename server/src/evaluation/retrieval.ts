@@ -49,7 +49,8 @@ export function buildDesignIndex(units: DesignUnit[]): DesignIndexEntry[] {
   });
 }
 
-function typeAffinity(requirementType: string, designType: string): number {
+/** Design-type affinity used by both lexical and hybrid retrieval reranking. */
+export function designTypeAffinity(requirementType: string, designType: string): number {
   if (requirementType === "功能需求") {
     return designType === "子功能" || designType === "模块" ? 0.12 : 0;
   }
@@ -100,7 +101,7 @@ export function rankDesignCandidates(
    */
   const scored = index.map((entry) => {
     const base = overlapScore(reqTokens, entry.tokens) * 0.68 + jaccard(reqTokens, entry.tokens) * 0.22;
-    let bonus = typeAffinity(requirement.type, entry.unit.type);
+    let bonus = designTypeAffinity(requirement.type, entry.unit.type);
     if (requirement.subsystem !== "全局" && entry.unit.subsystem === requirement.subsystem) bonus += 0.09;
     bonus += overlapScore(titleTokens, entry.nameTokens) * 0.14;
     return { unit: entry.unit, score: base + bonus };

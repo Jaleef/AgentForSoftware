@@ -304,13 +304,25 @@ function handleEnrich(text) {
   };
 }
 
+function mockEmbedding(text) {
+  const vector = new Array(8).fill(0);
+  for (let i = 0; i < text.length; i++) vector[i % 8] += text.charCodeAt(i) / 255;
+  const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
+  return vector.map((value) => value / norm);
+}
+
 const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true, calls }));
     return;
   }
-  if (req.method !== "POST" || !req.url?.endsWith("/chat/completions")) {
+  if (
+    req.method !== "POST" ||
+    (!req.url?.endsWith("/chat/completions") &&
+      !req.url?.endsWith("/embeddings") &&
+      !req.url?.endsWith("/rerank"))
+  ) {
     res.writeHead(404).end("not found");
     return;
   }
@@ -325,6 +337,25 @@ const server = http.createServer((req, res) => {
       body = JSON.parse(raw);
     } catch {
       res.writeHead(400).end("bad json");
+      return;
+    }
+    if (req.url?.endsWith("/embeddings")) {
+      const input = Array.isArray(body.input) ? body.input : [body.input];
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        data: input.map((text, index) => ({ index, embedding: mockEmbedding(String(text)) })),
+        model: body.model ?? "mock-embedding",
+      }));
+      return;
+    }
+    if (req.url?.endsWith("/rerank")) {
+      const documents = Array.isArray(body.documents) ? body.documents : [];
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        results: documents
+          .map((text, index) => ({ index, relevance_score: 1 - index / Math.max(documents.length, 1) }))
+          .slice(0, Number(body.top_n ?? documents.length)),
+      }));
       return;
     }
     const messages = body.messages ?? [];

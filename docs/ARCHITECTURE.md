@@ -1,3 +1,16 @@
+---
+id: DOC-ARCH-001
+title: 架构说明
+status: approved
+owner: architecture
+reviewers:
+  - backend
+last_reviewed: 2026-11-08
+related_code:
+  - server/src
+  - web/src
+---
+
 # 架构说明
 
 ## 1. 总体数据流
@@ -7,9 +20,11 @@ DOCX ──► ZIP/OOXML 解析 ──► 块序列（段落/表格）
                               │
                     ┌─────────┴─────────┐
                     ▼                   ▼
-              需求抽取器            设计抽取器
-        （表格+章节段落）      （设计表+数据表+页面）
+              需求点抽取            设计点抽取
+        （表格规则点+文本候选） （设计表规则点+数据库/文本候选）
                     │                   │
+                    ▼                   ▼
+              需求单元/义务         设计单元/义务
                     └─────────┬─────────┘
                               ▼
                      StoredDocument（JSON）
@@ -20,10 +35,11 @@ DOCX ──► ZIP/OOXML 解析 ──► 块序列（段落/表格）
                     评价 Runner（两层级）
               ┌───────────────┴───────────────┐
               ▼                               ▼
-     需求→设计检索 + LLM 判定          设计→代码检索 + LLM 判定
+   混合检索 → LLM 义务覆盖矩阵          代码检索 → LLM 判定
+   BM25F/Dense/RRF/Rerank              符号/路由/字段证据
               └───────────────┬───────────────┘
                               ▼
-                  Relation[] + CampaignSummary
+             Relation[] + 义务覆盖 + CampaignSummary
                               │
                               ▼
                 评价页 / 报告页 / Markdown·CSV·JSON
@@ -42,7 +58,12 @@ DOCX ──► ZIP/OOXML 解析 ──► 块序列（段落/表格）
 | `src/llm/requirements.ts` | 文本需求点判定、LLM 生成需求单元 |
 | `src/llm/design.ts` | 文本/数据库设计点判定、LLM 生成设计单元 |
 | `src/llm/taxonomy.ts` | 从需求/设计章节路径归纳统一子系统分类 |
-| `src/evaluation/retrieval.ts` | 中英文混合分词、类型亲和度、候选设计与代码排序 |
+| `src/evaluation/retrieval.ts` | Legacy 词面检索、设计/代码索引、类型亲和度 |
+| `src/evaluation/obligations.ts` | 需求义务稳定编号（O1..On） |
+| `src/evaluation/embeddings.ts` | 可选 OpenAI 兼容 embedding、缓存与归一化 |
+| `src/evaluation/hybrid.ts` | 义务级 BM25F/Dense/Legacy 召回、RRF 融合与结构重排 |
+| `src/evaluation/rerank.ts` | 可选 Cross-Encoder `/rerank` 重排 |
+| `src/agents/` | 确定性 MainAgent、子 Agent 契约、运行器、AgentRun 审计 |
 | `src/evaluation/engine.ts` | 批量 LLM 判定、结果校验、启发式回退、进度与取消 |
 | `src/evaluation/summary.ts` | 覆盖率、得分、分子系统/类型分桶、P0/P1/P2 |
 | `src/evaluation/runner.ts` | 任务生命周期、LLM 预检、持久化进度、取消、重启恢复 |
@@ -81,7 +102,7 @@ XML 解析器支持命名空间前缀、属性、CDATA、注释、字符实体�
 - 从 `styles.xml` 解析 styleId → name，支持 `Heading N`、`标题 N`、`outlineLvl`。
 - 忽略 `toc N` 目录样式，避免把目录当成正文。
 - 维护标题栈生成章节路径（如 `详细设计 / 数字孪生系统集成平台模块详细设计 / 管理模块设计 / 模型管理模块`）。
-- 设计解析仍可从标题回溯子系统；**需求解析不使用章节名决定需求类型或子系统**，章节路径只作为追溯信息保存。
+- **需求和设计解析都不使用章节名决定类型或子系统**；章节路径只作为追溯和 taxonomy 统计信息保存。
 
 ## 4. 抽取规则
 
@@ -130,19 +151,36 @@ XML 解析器支持命名空间前缀、属性、CDATA、注释、字符实体�
 
 ## 5. 评价执行
 
+评价由 `runAgentEvaluation` 编排：
+
+1. 主 Agent 过滤子系统、创建 `AgentContext`；
+2. 按层级调用需求→设计 / 设计→代码子 Agent；
+3. 子 Agent 内部调用现有 `runEvaluation` 单层级实现；
+4. 主 Agent 合并 relations，并用 `computeSummary` 重新汇总；
+5. 子 Agent 执行写入 `Campaign.agentRuns`。
+
+具体步骤：
+
 1. 校验层级所需文档（需求/设计/快照）。
-2. 构建设计索引（名称、描述、义务、接口、字段、关键词）与代码符号索引。
-3. 对每个需求/设计单元计算候选分数：
-   - 中文 bigram + 领域词；
-   - 中文→英文别名（登录→login、模型→model、故障检测→fault/detect 等）；
-   - 驼峰/下划线/路径拆分（`updateModel`→`update`,`model`）；
-   - 设计接口标识符与代码符号名的强匹配；
-   - 类型亲和度（需求类型 ↔ 设计类型、设计类型 ↔ 符号类型）；
-   - 同子系统加权。
-4. 以 4 条需求/批、3 个设计/批调用 LLM，要求返回严格 JSON。
-5. 校验返回的 code/handle 必须来自候选集合；无法匹配时回退启发式。
+2. 需求→设计：
+   - `buildHybridRetriever` 构建 BM25F/Legacy 索引，按配置尝试 Dense；
+   - 按需求义务逐条召回，RRF 融合，可选 Cross-Encoder；
+   - 每条需求取 Top 8，评价引擎取 Top 6。
+3. LLM 判定：
+   - 需求 payload 带 `O1..On` 义务；
+   - LLM 返回每个设计的 `targetCoverages`，不直接给整条需求状态；
+   - 校验 designCode 和 obligationId。
+4. 程序聚合：
+   - `buildCoverageRelation` 按冲突 > 完整覆盖 > 部分覆盖 > 缺失合并义务；
+   - 计算 `coverageRatio` 和覆盖置信度；
+   - 支持多个设计联合覆盖一条需求。
+5. 设计→代码：
+   - `rankCodeCandidates` 取 Top 7（同文件最多 2）；
+   - LLM 返回 `targetHandles`，校验后生成 Relation。
 6. 汇总并持久化每批进度；支持取消（AbortController）与重启恢复。
 7. LLM 预检失败时自动整体回退，避免连续失败拖慢任务。
+
+检索细节见 [检索](检索.md)，状态/置信度见 [评价口径](EVALUATION.md)。
 
 ## 6. 存储
 
@@ -152,9 +190,9 @@ XML 解析器支持命名空间前缀、属性、CDATA、注释、字符实体�
 {
   version: 1,
   projects: Project[],
-  documents: StoredDocument[],   // 含 requirements / designUnits / outline / stats
+  documents: StoredDocument[],   // 含 requirements/designUnits、requirementPoints/designPoints、taxonomy、stats
   snapshots: CodeSnapshot[],     // 每个项目保留最近 3 个
-  campaigns: Campaign[]          // 含 relations / summary / progress
+  campaigns: Campaign[]          // 含 relations / targetCoverages / summary / progress
 }
 ```
 
@@ -183,7 +221,7 @@ XML 解析器支持命名空间前缀、属性、CDATA、注释、字符实体�
 
 ## 8. 扩展点
 
-- **新增文档模板**：在 `requirements.ts` / `design.ts` 增加表格标签与章节分类规则。
+- **新增文档模板**：在 `requirements.ts` / `design.ts` 增加表格标签/字段别名；文本结构由 LLM 判定，不增加章节名分类规则。
 - **新增代码语言**：在 `code.ts` 增加扩展名与符号正则；索引/评价无需改动。
 - **新增评价维度**：在 `types.ts` 扩展 `Relation`，在 `engine.ts` 增加链路，在 `summary.ts` 增加权重。
 - **接入其他模型**：`LlmClient` 已是通用 OpenAI 兼容层；如协议不同，替换 `chat()` 即可。

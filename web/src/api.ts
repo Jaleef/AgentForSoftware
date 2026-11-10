@@ -205,7 +205,13 @@ export const api = {
       body: JSON.stringify({ llm, clearApiKey }),
     }),
   testSettings: (llm: Partial<LlmSettings>) =>
-    request<{ ok: boolean; latencyMs: number; message: string }>("/settings/test", {
+    request<{
+      ok: boolean;
+      latencyMs: number;
+      message: string;
+      source?: "env" | "settings";
+      apiKeyHint?: string;
+    }>("/settings/test", {
       method: "POST",
       body: JSON.stringify({ llm }),
     }),

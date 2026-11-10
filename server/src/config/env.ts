@@ -4,7 +4,7 @@
  * 只影响开发进程；生产构建仍以设置页/运行环境配置为准。
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LlmSettings } from "../types.js";
@@ -20,6 +20,10 @@ export interface EnvConfigInfo {
   envFile: string;
   envLoaded: boolean;
   envActive: boolean;
+  /** True when .env changed after this process loaded it; restart is required. */
+  envFileChanged: boolean;
+  /** Variables already present in the process environment; they win over .env. */
+  shadowedKeys: string[];
   values: {
     baseUrl: string;
     model: string;
@@ -63,16 +67,39 @@ function parseEnvFile(content: string): Record<string, string> {
 }
 
 let envLoaded = false;
+let envLoadedMtimeMs = 0;
+const shadowedKeys: string[] = [];
 if (isDevelopment && existsSync(envFilePath)) {
   try {
+    envLoadedMtimeMs = statSync(envFilePath).mtimeMs;
     const parsed = parseEnvFile(readFileSync(envFilePath, "utf8"));
     for (const [key, value] of Object.entries(parsed)) {
-      // Real process environment has higher priority than the file.
+      // Real process environment has higher priority than the file. Record it
+      // because this is a common cause of "I changed .env but it still uses
+      // the old key" confusion.
       if (process.env[key] === undefined) process.env[key] = value;
+      else shadowedKeys.push(key);
     }
     envLoaded = true;
+    if (shadowedKeys.length) {
+      console.warn(
+        `[env] 以下进程环境变量优先于 .env，可能来自启动终端/VS Code：${[
+          ...new Set(shadowedKeys),
+        ].join(", ")}`,
+      );
+    }
   } catch (err) {
     console.warn(`[env] 无法读取 ${envFilePath}: ${(err as Error).message}`);
+  }
+}
+
+/** Detect edits that happened after process start; tsx watch does not reload .env. */
+function envFileChanged(): boolean {
+  if (!isDevelopment || !envLoaded) return false;
+  try {
+    return statSync(envFilePath).mtimeMs !== envLoadedMtimeMs;
+  } catch {
+    return false;
   }
 }
 
@@ -169,6 +196,8 @@ export function getEnvConfigInfo(): EnvConfigInfo {
     envFile: envFilePath,
     envLoaded,
     envActive,
+    envFileChanged: envFileChanged(),
+    shadowedKeys: [...new Set(shadowedKeys)],
     values: {
       baseUrl: envActive ? envBaseUrl.value : "",
       model: envActive ? envModel.value : "",

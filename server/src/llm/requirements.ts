@@ -122,7 +122,7 @@ export async function judgeTextRequirementPoints(
   const batches = chunks(textPoints, 8);
   let usedLlm = false;
   let done = 0;
-  await mapLimit(batches, Math.max(1, Math.min(concurrency, 3)), async (batch) => {
+  await mapLimit(batches, Math.max(1, Math.min(concurrency, 8)), async (batch) => {
     try {
       const payload = batch.map((point) => ({
         pointId: point.id,
@@ -173,7 +173,7 @@ export async function generateRequirementUnits(
   let usedLlm = false;
   let done = 0;
 
-  await mapLimit(batches, Math.max(1, Math.min(concurrency, 3)), async (batch) => {
+  await mapLimit(batches, Math.max(1, Math.min(concurrency, 8)), async (batch) => {
     try {
       const payload = batch.map((point) => ({
         pointId: point.id,
@@ -290,3 +290,4 @@ export async function runRequirementAgent(
     usedLlm: judgement.usedLlm || generation.usedLlm || taxonomy.usedLlm,
   };
 }
+

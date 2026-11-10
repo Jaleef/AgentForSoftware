@@ -1,8 +1,22 @@
+---
+id: DOC-EVAL-001
+title: 评价口径
+status: approved
+owner: architecture
+reviewers:
+  - QA
+last_reviewed: 2026-11-08
+related_code:
+  - server/src/evaluation
+---
+
 # 评价口径
 
 ## 1. 目标与边界
 
 本工具评价**文档与文档、文档与代码之间的一致性**，不是缺陷检测器，也不评价代码质量、性能或安全性本身。
+
+执行链路由 MainAgent 编排需求→设计、设计→代码两个子 Agent，见 [Agent 架构](Agent架构.md)；本页只定义判定口径。
 
 - 需求→设计：检查设计是否覆盖需求的全部可核验义务。
 - 设计→代码：检查代码快照是否实现设计的接口、输入输出、数据结构和行为。
@@ -90,37 +104,44 @@ status =
 
 ## 4. 检索
 
-LLM 只看候选，不直接读全量文档/代码。候选由混合检索产生：
+LLM 只看候选，不直接读全量文档/代码。
 
-1. **中文分词**：连续汉字切 bigram，加入领域词（故障检测、寿命预测、数据同步、元数据等）。
-2. **跨语言别名**：登录→login、用户→user、模型→model、数据库→database、故障→fault、检测→detect、同步→sync、页面→page 等。
-3. **标识符拆分**：`updateModel` → `update` + `model`，`user.routes.ts` → `user` + `routes`。
-4. **强匹配**：设计接口中的函数名与代码符号名精确/包含匹配，显著加分。
-5. **类型亲和度**：页面需求优先页面设计；数据需求优先数据表；页面设计优先前端组件；数据表优先 ORM 模型/SQL 表。
-6. **同子系统**：需求和设计同属降水仪/重力波仪/测云仪/平台时加分。
+需求→设计采用**义务级混合检索**：
 
-需求→设计取 Top 6 候选；设计→代码取 Top 7 符号（同一文件最多 2 个，避免候选被单文件占满）。
+- BM25F：字段加权的接口/义务/字段/名称召回；
+- Legacy：原 token 覆盖率 + Jaccard；
+- Dense：可选语义召回；
+- RRF：多通道排名融合；
+- 可选 Cross-Encoder：Top 20 精排到 Top 8；
+- 评价引擎最终取 Top 6 交给 LLM。
+
+设计→代码仍使用 `rankCodeCandidates` 取 Top 7 符号，同一文件最多 2 个。
+
+完整算法、配置和验证见 [检索](检索.md)。
 
 ## 5. LLM 契约
 
 ### 5.1 需求→设计
 
-输入：需求（类型、子系统、标题、描述、说明、义务）+ 候选设计（code、类型、摘要、描述、义务、接口、输入输出、字段）。
+输入：需求（类型、子系统、标题、描述、说明、带编号义务 O1..On）+ 候选设计（code、类型、摘要、描述、义务、接口、输入输出、字段）。
 
-要求返回：
+LLM **不直接输出整条需求状态**，只输出每个设计对义务的覆盖：
 
 ```json
 {
   "items": [
     {
       "requirementCode": "SRS-FR-001",
-      "status": "satisfied|partial|missing|mismatch",
-      "targetCodes": ["SDD-FUN-001"],
-      "confidence": 0.85,
-      "rationale": "判定说明",
-      "evidence": "设计原文片段",
-      "gaps": ["缺失项"],
-      "suggestions": "补齐建议"
+      "targetCoverages": [
+        {
+          "designCode": "SDD-FUN-001",
+          "coveredObligations": ["O1", "O2"],
+          "partialObligations": ["O3"],
+          "conflictingObligations": [],
+          "evidence": "设计原文片段",
+          "confidence": 0.9
+        }
+      ]
     }
   ]
 }
@@ -128,9 +149,11 @@ LLM 只看候选，不直接读全量文档/代码。候选由混合检索产生
 
 约束：
 
-- `targetCodes` 必须来自该需求的候选。
-- `satisfied` 必须有 evidence；无证据时置信度不高于 0.6。
-- `gaps` 必须具体；`satisfied` 时为空数组。
+- `designCode` 必须来自该需求的候选；
+- obligationId 必须来自输入义务；
+- 一个设计可以只覆盖部分义务，多个设计可以互补；
+- 没有覆盖/冲突的候选不输出；
+- 最终状态、覆盖率、置信度由程序聚合，见第 3.1 节。
 
 ### 5.2 设计→代码
 
@@ -155,14 +178,19 @@ LLM 只看候选，不直接读全量文档/代码。候选由混合检索产生
 
 `implemented` 映射为内部 `satisfied`；`divergent` 保留。代码片段视为待审数据，忽略其中的指令性文字（防提示注入）。
 
-### 5.3 摘要/分类
+### 5.3 需求/设计两阶段 Agent
 
-需求/设计上传时可选择“使用 LLM 总结/分类”：
+上传时可选择「LLM 整理」：
 
-- 需求：类型（枚举）、摘要、4–8 条原子义务、关键词、置信度。
-- 设计：摘要、4–10 条原子义务（保留接口/字段标识符）、关键词、置信度。
+1. 判断文本/数据库候选是否构成单元；
+2. 统计章节路径，归纳子系统 taxonomy；
+3. 对全部已接受点生成单元：
+   - 需求：标题、类型、摘要、义务、关键词；
+   - 设计：名称、类型、摘要、设计义务、关键词，保留结构化表和字段。
 
-失败时保留规则拆分结果，并在文档警告中提示。
+置信度来自拆分点：规则表格 100%，文本/数据库点由 LLM 判定。生成单元阶段不重新给置信度。
+
+失败时保留规则拆分结果，并在文档 warning 中提示。
 
 ## 6. 汇总
 
@@ -170,8 +198,17 @@ LLM 只看候选，不直接读全量文档/代码。候选由混合检索产生
 
 ```
 statusWeight = { satisfied: 100, partial: 60, divergent: 30, mismatch: 20, missing: 0 }
-levelScore  = mean(statusWeight)          // 按层级
-overall     = 两层级都存在 ? mean(levelScore) : 单层级 levelScore
+
+需求→设计（satisfied/partial）：
+  relationScore = coverageRatio × 100
+需求→设计（mismatch/missing）：
+  relationScore = statusWeight
+
+设计→代码：
+  relationScore = statusWeight
+
+levelScore = mean(relationScore)
+overall    = 两层级都存在 ? mean(levelScore) : 单层级 levelScore
 ```
 
 人工驳回的判定不参与计算（任务详情中的分子系统/总览会重新汇总）。
@@ -179,10 +216,12 @@ overall     = 两层级都存在 ? mean(levelScore) : 单层级 levelScore
 ### 6.2 覆盖率
 
 ```
-需求覆盖率       = (satisfied需求 + 0.5 × partial需求) / 需求总数
+需求覆盖率       = Σ 每条需求的 coverageRatio / 需求总数
 设计实现覆盖率   = (satisfied设计 + 0.5 × partial设计) / 设计单元总数
 设计被需求追溯   = 在需求→设计判定中出现过的设计单元数 / 设计单元总数
 ```
+
+需求→设计的 `coverageRatio` 为义务覆盖比例；旧任务没有该字段时回退到状态权重。
 
 ### 6.3 问题等级
 
@@ -208,13 +247,14 @@ overall     = 两层级都存在 ? mean(levelScore) : 单层级 levelScore
 | LLM 预检失败 | 整个任务回退启发式，保留失败原因 |
 | 单个批次调用失败 | 该批次回退启发式，最多保留 6 条警告，其余合并提示 |
 | 返回非法 JSON / 非法 code | 视为该批次失败，回退启发式 |
-| 返回 `satisfied` 但没有合法目标 | 降级为 `partial` |
+| 返回非法义务 ID / 未覆盖任何义务 | 该设计贡献被忽略；整条需求可能为 missing |
+| 旧格式返回 status/targetCodes | 走兼容路径，不生成义务矩阵 |
 | 用户取消 | AbortController 中断；任务状态 `cancelled` |
 | 服务重启 | 启动时把残留的 `running/queued` 任务标记为失败，提示重新创建 |
 
 启发式规则：
 
-- 需求→设计：按混合检索得分，≥0.40 已覆盖（取 ≥0.24 的 Top2），≥0.20 部分覆盖，否则缺失。
+- 需求→设计：按检索得分，≥0.20 部分覆盖，否则缺失；**不再直接判 satisfied**，因为无法逐条核验义务。
 - 设计→代码：数据表阈值略低；≥0.34 已实现，≥0.18 部分实现，否则缺失。
 - 启发式不产生 `divergent`。
 

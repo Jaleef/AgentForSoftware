@@ -29,7 +29,9 @@ import {
   type RankedSymbol,
   type SymbolIndexEntry,
 } from "./retrieval.js";
+import { buildHybridRetriever, type HybridRetriever } from "./hybrid.js";
 import { computeSummary, severityFor } from "./summary.js";
+import { requirementObligations, type RequirementObligationItem } from "./obligations.js";
 
 export class CancelledError extends Error {
   constructor() {
@@ -426,23 +428,6 @@ function designPayload(unit: DesignUnit) {
   };
 }
 
-interface RequirementObligationItem {
-  id: string;
-  text: string;
-}
-
-/** Stable obligation ids used for the coverage matrix. */
-export function requirementObligations(unit: RequirementUnit): RequirementObligationItem[] {
-  const texts = unit.obligations
-    .map((text) => clip(text, 240))
-    .filter((text) => text.length >= 3)
-    .slice(0, 8);
-  if (!texts.length) {
-    texts.push(clip(unit.summary || unit.description || unit.title, 240) || "满足需求描述中的全部要求");
-  }
-  return texts.map((text, index) => ({ id: `O${index + 1}`, text }));
-}
-
 function requirementPayload(unit: RequirementUnit) {
   return {
     code: unit.code,
@@ -716,15 +701,31 @@ export async function runEvaluation(
       Math.max(totalBatches, 1),
       `正在检索设计候选（${filteredRequirements.length} 条需求）…`,
     );
+    let hybrid: HybridRetriever | undefined;
+    let hybridWarningCount = 0;
+    try {
+      hybrid = await buildHybridRetriever(filteredDesign, filteredRequirements, {
+        finalLimit: 8,
+        channelLimit: 16,
+      });
+      hybridWarningCount = hybrid.warnings.length;
+      for (const warning of hybrid.warnings) addWarning(warning);
+    } catch (err) {
+      addWarning(`混合检索初始化失败，已回退词面检索：${(err as Error).message}`);
+    }
     const rankedByCode = new Map<
       string,
-      ReturnType<typeof rankDesignCandidates>
+      Array<{ unit: DesignUnit; score: number }>
     >();
     for (const requirement of filteredRequirements) {
+      const hybridRanked = hybrid ? await hybrid.rank(requirement) : [];
       rankedByCode.set(
         requirement.code,
-        rankDesignCandidates(requirement, designIndex, 8),
+        hybridRanked.length ? hybridRanked : rankDesignCandidates(requirement, designIndex, 8),
       );
+    }
+    if (hybrid && hybrid.warnings.length > hybridWarningCount) {
+      for (const warning of hybrid.warnings.slice(hybridWarningCount)) addWarning(warning);
     }
 
     if (useLlm && client) {

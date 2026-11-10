@@ -73,9 +73,20 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 export class LlmClient {
   private settings: LlmSettings;
   private jsonModeSupported = true;
+  private callCount = 0;
+  private maxCalls = Number.POSITIVE_INFINITY;
 
   constructor(settings?: LlmSettings) {
     this.settings = settings ?? readSettings().llm;
+  }
+
+  get calls(): number {
+    return this.callCount;
+  }
+
+  /** Hard cap for agent budgets; legacy callers keep the default unlimited value. */
+  setMaxCalls(maxCalls: number): void {
+    this.maxCalls = Math.max(0, Math.floor(maxCalls));
   }
 
   get model(): string {
@@ -112,6 +123,10 @@ export class LlmClient {
 
     let lastError: LlmError | undefined;
     for (let attempt = 0; attempt < 3; attempt++) {
+      if (this.callCount >= this.maxCalls) {
+        throw new LlmError("已达到本次任务的 LLM 调用预算上限，请缩小范围或提高预算。", undefined, false);
+      }
+      this.callCount++;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? this.settings.timeoutMs);
       const onAbort = (): void => controller.abort();

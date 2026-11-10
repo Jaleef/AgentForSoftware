@@ -152,14 +152,9 @@ documentsRouter.post("/projects/:projectId/documents/:docId/reparse", async (req
       res.status(404).json({ error: "文档不存在" });
       return;
     }
-    const settings = readSettings().llm;
-    if (updated.useLlm && settings.apiKey && !settings.mock) {
-      await mutateStore((data) => {
-        const target = data.documents.find((d) => d.id === updated.id);
-        if (target) target.status = "enriching";
-      });
-      void runEnrichment(updated.id);
-    }
+    // Reparse is intentionally deterministic: it only refreshes rule parsing.
+    // LLM enrichment is a separate explicit action so a bad key cannot make
+    // every reparse look like a parsing failure.
     res.json({ document: documentSummary(updated) });
   } catch (err) {
     res.status(400).json({ error: `重新拆分失败：${(err as Error).message}` });

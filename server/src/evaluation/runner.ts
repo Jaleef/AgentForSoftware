@@ -6,7 +6,8 @@
 
 import type { Campaign } from "../types.js";
 import { LlmClient } from "../llm/client.js";
-import { runEvaluation, CancelledError } from "./engine.js";
+import { CancelledError } from "./engine.js";
+import { runAgentEvaluation } from "../agents/main-agent.js";
 import { getStore, mutateStore, readSettings } from "../store.js";
 import { nowIso } from "../util/id.js";
 
@@ -74,9 +75,12 @@ export async function startCampaignRun(campaignId: string, projectId: string): P
       c.progress = { done: 0, total: 1, message: "正在准备文档与代码索引…" };
       c.provider = useLlm ? "openai-compatible" : "heuristic";
       c.model = useLlm ? settings.model : "规则匹配";
+      c.pipeline = "agent";
     });
 
-    const result = await runEvaluation({
+    const result = await runAgentEvaluation({
+      campaignId,
+      projectId,
       levels: campaign.levels,
       subsystems: campaign.subsystems ?? [],
       requirements: requirementsDoc?.requirements ?? [],
@@ -109,15 +113,20 @@ export async function startCampaignRun(campaignId: string, projectId: string): P
       c.summary = result.summary;
       c.method = result.method;
       c.warnings = warnings;
+      c.pipeline = "agent";
+      c.agentRuns = [...(c.agentRuns ?? []), ...result.agentRuns].slice(-50);
       c.progress = { done: 1, total: 1, message: `已完成 ${result.relations.length} 条一致性判定` };
       c.finishedAt = nowIso();
     });
   } catch (err) {
     const aborted = controller.signal.aborted || err instanceof CancelledError;
+    const failedRuns = (err as Error & { agentRuns?: Campaign["agentRuns"] }).agentRuns ?? [];
     await update((c) => {
       c.status = aborted ? "cancelled" : "failed";
       c.error = aborted ? "任务已取消" : (err as Error).message;
       c.finishedAt = nowIso();
+      c.pipeline = "agent";
+      c.agentRuns = [...(c.agentRuns ?? []), ...failedRuns].slice(-50);
       c.progress = { done: 0, total: 1, message: aborted ? "任务已取消" : "评价失败" };
     }).catch(() => undefined);
     if (!aborted) console.error("[campaign]", err);

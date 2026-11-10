@@ -341,6 +341,23 @@ export interface CampaignSummary {
   findings: { p0: number; p1: number; p2: number };
 }
 
+export interface AgentRun {
+  id: string;
+  agent: string;
+  version: string;
+  stage: string;
+  status: "running" | "completed" | "failed" | "skipped";
+  startedAt: string;
+  finishedAt?: string;
+  model?: string;
+  promptVersion?: string;
+  inputHash?: string;
+  outputSummary?: string;
+  warnings: string[];
+  metrics?: { llmCalls: number; durationMs: number };
+  error?: string;
+}
+
 export interface Campaign {
   id: string;
   projectId: string;
@@ -360,6 +377,8 @@ export interface Campaign {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
+  pipeline?: "legacy" | "agent";
+  agentRuns?: AgentRun[];
 }
 
 export interface LlmSettings {
@@ -381,6 +400,8 @@ export interface SettingsMeta {
   envFile: string;
   envLoaded: boolean;
   envActive: boolean;
+  envFileChanged?: boolean;
+  shadowedKeys?: string[];
   values: {
     baseUrl: string;
     model: string;

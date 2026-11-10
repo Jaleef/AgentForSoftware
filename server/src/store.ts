@@ -37,16 +37,20 @@ const emptyStore: StoreData = {
 let cache: StoreData | null = null;
 let writeQueue: Promise<unknown> = Promise.resolve();
 
+/** 保证 dataDir 和 uploadDir 两个文件夹都存在 */
 function ensureDirs(): void {
   for (const dir of [dataDir, uploadsDir]) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   }
 }
 
+/** 同步加载 data/store.json 文件内容，
+ * 返回一个 StoreData 类型的对象 */
 function loadSync(): StoreData {
   ensureDirs();
   if (!existsSync(storeFile)) return structuredClone(emptyStore);
   try {
+    // Partial<StoreData> 将读出的 StoreData 允许缺少字段，便于向前兼容 
     const parsed = JSON.parse(readFileSync(storeFile, "utf8")) as Partial<StoreData>;
     return {
       version: parsed.version ?? 1,
@@ -77,6 +81,7 @@ export async function getStore(): Promise<StoreData> {
   return cache;
 }
 
+/** 将 StoreData 对象写入 data/store.json (非追加，替换) */
 function persist(data: StoreData): void {
   ensureDirs();
   const tmp = `${storeFile}.${process.pid}.tmp`;
@@ -101,11 +106,16 @@ export function mutateStore<T>(fn: (data: StoreData) => T | Promise<T>): Promise
   return next;
 }
 
+/** 查找项目信息，
+ * 返回一个 Project 对象 */
 export async function findProject(projectId: string): Promise<Project | undefined> {
   const data = await getStore();
   return data.projects.find((p) => p.id === projectId);
 }
 
+/** 根据 projectID, 查找项目里的所有的文件；
+ * 返回一个
+ */
 export async function getProjectDocuments(projectId: string): Promise<StoredDocument[]> {
   const data = await getStore();
   return data.documents.filter((d) => d.projectId === projectId);

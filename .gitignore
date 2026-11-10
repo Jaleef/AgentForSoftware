@@ -11,4 +11,4 @@ data/*.json
 scripts/*.txt
 
 文档例子
-docs/screenshots
+tips.txt

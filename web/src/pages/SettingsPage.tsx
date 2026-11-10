@@ -117,7 +117,12 @@ export function SettingsPage() {
     setMessage(null);
     try {
       const result = await api.testSettings(toPayload());
-      setMessage({ tone: "green", text: `连接成功（${result.latencyMs} ms）：${result.message}` });
+      const sourceLabel = result.source === "env" ? ".env" : "设置页";
+      const keyLabel = result.apiKeyHint ? `，Key：${result.apiKeyHint}` : "";
+      setMessage({
+        tone: "green",
+        text: `连接成功（${result.latencyMs} ms，使用${sourceLabel}配置${keyLabel}）：${result.message}`,
+      });
     } catch (err) {
       setMessage({ tone: "red", text: `连接失败：${(err as Error).message}` });
     } finally {
@@ -166,6 +171,20 @@ export function SettingsPage() {
           当前为开发环境，LLM 配置由 <span className="inline-code">{meta?.envFile}</span> 接管。
           修改 <span className="inline-code">.env</span> 后请重启 <span className="inline-code">pnpm dev</span>。
           部署环境（<span className="inline-code">pnpm build &amp;&amp; pnpm start</span>）不会读取该文件，请在本页配置模型。
+        </Notice>
+      )}
+      {envMode && Boolean(meta?.shadowedKeys?.length) && (
+        <Notice tone="amber">
+          检测到启动进程已设置环境变量{" "}
+          <span className="inline-code">{meta?.shadowedKeys?.join(", ")}</span>，它们优先于{" "}
+          <span className="inline-code">.env</span>，因此页面显示的 Key 可能不是文件中的值。
+          请移除这些环境变量后重启 <span className="inline-code">pnpm dev</span>。
+        </Notice>
+      )}
+      {envMode && meta?.envFileChanged && (
+        <Notice tone="amber">
+          检测到 <span className="inline-code">.env</span> 在服务启动后被修改。当前进程仍在使用启动时加载的旧配置，
+          请重启 <span className="inline-code">pnpm dev</span> 后再测试。
         </Notice>
       )}
       {meta?.environment === "development" && !envMode && (
