@@ -50,7 +50,7 @@ MainAgent（确定性编排）
 
 - 不直接解析 DOCX；
 - 不直接调用 LLM；
-- 不直接写 `store.json`；
+- 不直接写 `data/app.db`；
 - 不让 LLM 决定是否跳过校验。
 
 ### 子 Agent

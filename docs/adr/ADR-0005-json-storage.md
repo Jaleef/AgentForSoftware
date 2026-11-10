@@ -1,8 +1,9 @@
 ---
 id: ADR-0005
 title: 当前采用单用户 JSON 存储
-status: accepted
+status: superseded
 date: 2026-11-08
+superseded_by: ADR-0007
 deciders:
   - architecture
   - ops
@@ -12,6 +13,8 @@ supersedes: ""
 ---
 
 # ADR-0005：当前采用单用户 JSON 存储
+
+> **已被 [ADR-0007](ADR-0007-sqlite-storage.md) 替代**：2026-11-10 起主存储迁移到本地 SQLite。本文保留为历史决策记录。
 
 ## 背景
 

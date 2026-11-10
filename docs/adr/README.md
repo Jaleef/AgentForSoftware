@@ -19,7 +19,8 @@ related_code: []
 | [ADR-0002](ADR-0002-two-stage-split.md) | 需求/设计采用“点 → LLM 单元”两阶段拆分 | accepted |
 | [ADR-0003](ADR-0003-obligation-coverage.md) | 需求→设计采用义务级多设计联合覆盖 | accepted |
 | [ADR-0004](ADR-0004-hybrid-retrieval.md) | 检索采用 BM25F + Dense + RRF + 可选 Rerank | accepted |
-| [ADR-0005](ADR-0005-json-storage.md) | 当前采用单用户 JSON 存储 | accepted |
+| [ADR-0005](ADR-0005-json-storage.md) | 当前采用单用户 JSON 存储 | superseded by ADR-0007 |
 | [ADR-0006](ADR-0006-main-sub-agent.md) | 确定性主 Agent + 专用子 Agent | accepted |
+| [ADR-0007](ADR-0007-sqlite-storage.md) | 使用本地 SQLite 替代 JSON 文件 | accepted |
 
 新 ADR 复制 [ADR 模板](../templates/ADR模板.md)。

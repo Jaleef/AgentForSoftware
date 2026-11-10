@@ -1,5 +1,15 @@
 # 变更记录
 
+## 2026-11-10
+
+### 存储
+
+- 主存储从 `data/store.json` 迁移到 `data/app.db`（Node 内置 `node:sqlite`，WAL）；
+- 新增一次性 JSON 迁移、`*.migrated-*` 备份和 `pnpm store:smoke`；
+- 设置从 `data/settings.json` 迁移到 SQLite `settings` 表；
+- 最低 Node 版本提升到 24；
+- 新增 ADR-0007，ADR-0005 标记为 superseded。
+
 ## 2026-11-08
 
 ### 文档体系
@@ -52,3 +62,4 @@
 ### Fixed
 ### Docs
 ```
+

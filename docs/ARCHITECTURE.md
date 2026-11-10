@@ -73,7 +73,10 @@ DOCX ──► ZIP/OOXML 解析 ──► 块序列（段落/表格）
 | `src/services/design.ts` | 手工新增/删除设计单元、`SDD-MAN-NNN` 编号、同步设计点 |
 | `src/services/projects.ts` | 项目聚合视图 |
 | `src/services/report.ts` | Markdown/CSV 报告生成 |
-| `src/store.ts` | JSON 文件存储、串行化写入、原子替换、设置脱敏 |
+| `src/store.ts` | SQLite 存储门面、缓存、行级 diff、设置脱敏 |
+| `src/storage/db.ts` | `node:sqlite` 连接、WAL pragma、事务 |
+| `src/storage/schema.ts` | 顶层实体表、索引、schema 版本 |
+| `src/storage/migrate.ts` | `store.json` / `settings.json` 一次性迁移与备份 |
 
 ## 3. DOCX 解析细节
 
@@ -184,29 +187,41 @@ XML 解析器支持命名空间前缀、属性、CDATA、注释、字符实体�
 
 ## 6. 存储
 
-`data/store.json`：
+`data/app.db` 使用 Node 内置 `node:sqlite`，WAL 模式。顶层实体各占一行：
+
+```text
+projects(id, created_at, updated_at, payload)
+documents(id, project_id, kind, uploaded_at, updated_at, payload)
+snapshots(id, project_id, created_at, payload)
+campaigns(id, project_id, status, created_at, updated_at, payload)
+settings(id=1, payload, updated_at)
+meta(key, value)
+```
+
+`payload` 保存完整对象 JSON，因此 `StoreData` 和所有 API 不变：
 
 ```ts
 {
   version: 1,
   projects: Project[],
   documents: StoredDocument[],   // 含 requirements/designUnits、requirementPoints/designPoints、taxonomy、stats
-  snapshots: CodeSnapshot[],     // 每个项目保留最近 3 个
+  snapshots: CodeSnapshot[],
   campaigns: Campaign[]          // 含 relations / targetCoverages / summary / progress
 }
 ```
 
-`data/settings.json`：LLM 配置（含 API Key 明文，仅本机）。
-`data/uploads/<projectId>/...`：原始 DOCX。
-
-写操作通过串行队列执行，先写临时文件再 `rename`，避免并发写坏文件。读取使用内存缓存。
+- 读：首次访问从 SQLite 加载到内存缓存；
+- 写：`mutateStore` 串行执行，事务内按实体 JSON diff 只 upsert 变化行、删除消失行；
+- 失败：回滚并清空缓存，下次从数据库重新加载；
+- 旧 `store.json` / `settings.json` 首次启动迁移后改名为 `*.migrated-*`；
+- `data/uploads/<projectId>/...` 仍保存原始 DOCX。
 
 ### 6.1 LLM 配置来源
 
 `server/src/config/env.ts` 负责读取配置：
 
-- **开发环境**（`NODE_ENV=development` 或直接以 tsx 运行 `src/index.ts`）：加载仓库根目录 `.env`，`LLM_*` 覆盖 `data/settings.json` 的对应字段。
-- **部署环境**（运行 `server/dist`）：不加载 `.env` 中的 LLM 配置，只读取「设置」页保存的 `data/settings.json`。
+- **开发环境**（`NODE_ENV=development` 或直接以 tsx 运行 `src/index.ts`）：加载仓库根目录 `.env`，`LLM_*` 覆盖 `data/app.db` 设置表的对应字段。
+- **部署环境**（运行 `server/dist`）：不加载 `.env` 中的 LLM 配置，只读取「设置」页保存的 `data/app.db`。
 - 开发环境只要检测到任一 `LLM_*`，`/api/settings` 返回 `meta.configSource="env"`，设置页只读；保存接口返回 409。
 - 真实进程环境变量优先于 `.env` 文件值。
 - API Key 只在服务端使用，接口响应仅返回脱敏提示。
