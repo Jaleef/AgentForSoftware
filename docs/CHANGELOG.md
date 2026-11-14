@@ -1,5 +1,20 @@
 # 变更记录
 
+## 2026-11-14
+
+### 架构简化：移除主-从 Agent 层
+
+- 删除 `server/src/agents/`（MainAgent、AgentContext、运行器、四个子 Agent）及 `tools/agent-smoke.ts`；
+- 文档整理改为直接调用 `runRequirementAgent` / `runDesignAgent`，评价改为直接调用 `runEvaluation`；
+- 删除 `AgentRun`、`StoredDocument.agentRuns`、`Campaign.agentRuns`、`Campaign.pipeline` 及 `agents:smoke` 脚本；
+- 保留 `LlmClient.setMaxCalls(300)` 作为文档整理的调用预算；
+- 历史数据中的 `agentRuns` 字段会被忽略，不影响读取；
+- 新增 ADR-0008，ADR-0006 标记为 superseded。
+
+### 文档
+
+- 删除 `docs/Agent架构.md`，同步更新 README、ARCHITECTURE、API、数据流、EVALUATION 等处的 Agent 描述。
+
 ## 2026-11-10
 
 ### 去自研化

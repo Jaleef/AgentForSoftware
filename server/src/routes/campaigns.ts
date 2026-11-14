@@ -150,7 +150,6 @@ campaignsRouter.get("/projects/:projectId/campaigns/:campaignId", async (req, re
       campaign: {
         ...rest,
         relations: [],
-        agentRuns: (rest.agentRuns ?? []).slice(-5),
       },
     });
     return;

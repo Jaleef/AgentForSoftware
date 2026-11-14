@@ -11,10 +11,8 @@ import { parseDocxBuffer } from "../parsers/docx.js";
 import { parseRequirements, extractRequirementPoints } from "../parsers/requirements.js";
 import { parseDesign, extractDesignPoints } from "../parsers/design.js";
 import { LlmClient } from "../llm/client.js";
-import { createAgentContext } from "../agents/context.js";
-import { runSubAgent } from "../agents/runtime.js";
-import { RequirementSplitAgent } from "../agents/subagents/requirement-split.agent.js";
-import { DesignSplitAgent } from "../agents/subagents/design-split.agent.js";
+import { runRequirementAgent } from "../llm/requirements.js";
+import { runDesignAgent } from "../llm/design.js";
 import {
   ensureProjectDir,
   getStore,
@@ -195,19 +193,12 @@ async function runEnrichmentInternal(docId: string): Promise<void> {
   }
   const client = new LlmClient(settings);
   const concurrency = Math.max(1, Math.min(settings.concurrency, 8));
-  let context: ReturnType<typeof createAgentContext> | undefined;
 
   try {
     // Fail fast before sending dozens of batches to a misconfigured endpoint.
     await client.testConnection();
-    context = createAgentContext({
-      taskId: newId("task"),
-      projectId: doc.projectId,
-      docId: doc.id,
-      client,
-      maxLlmCalls: 300,
-    });
-    const agentRuns = context.agentRuns;
+    // 限制单次整理的最大模型调用数，避免配置错误时无限重试。
+    client.setMaxCalls(300);
     if (doc.kind === "srs") {
       // Requirement pipeline: table points + LLM text judgement + LLM unit generation.
       let points = doc.requirementPoints ?? [];
@@ -216,12 +207,12 @@ async function runEnrichmentInternal(docId: string): Promise<void> {
         points = extracted.points;
       }
       if (!points.length) throw new Error("未解析到需求点，请先执行「重新拆分」后再让 LLM 生成需求单元。");
-      const agentResult = await runSubAgent(
-        new RequirementSplitAgent(),
-        { documentId: doc.id, points: structuredClone(points), client, concurrency },
-        context,
+      const result = await runRequirementAgent(
+        doc.id,
+        structuredClone(points),
+        client,
+        concurrency,
       );
-      const result = agentResult.data;
       await mutateStore((data) => {
         const target = data.documents.find((d) => d.id === docId);
         if (!target) return;
@@ -260,7 +251,6 @@ async function runEnrichmentInternal(docId: string): Promise<void> {
           `规则解析需求点 ${result.tablePoints} 个（需求表，置信度 100%）；文本候选 ${result.textPoints} 个，LLM 判定为需求 ${result.acceptedTextPoints} 个；归纳子系统类别 ${result.taxonomy.length} 个；生成需求单元 ${result.units.length} 个。`,
           ...result.warnings,
         ];
-        target.agentRuns = [...(target.agentRuns ?? []), ...agentRuns].slice(-20);
         recomputeRequirementStats(target);
       });
       return;
@@ -273,12 +263,12 @@ async function runEnrichmentInternal(docId: string): Promise<void> {
       points = extracted.points;
     }
     if (!points.length) throw new Error("未解析到设计点，请先执行「重新拆分」后再让 LLM 生成设计单元。");
-    const agentResult = await runSubAgent(
-      new DesignSplitAgent(),
-      { documentId: doc.id, points: structuredClone(points), client, concurrency },
-      context,
+    const result = await runDesignAgent(
+      doc.id,
+      structuredClone(points),
+      client,
+      concurrency,
     );
-    const result = agentResult.data;
     await mutateStore((data) => {
       const target = data.documents.find((d) => d.id === docId);
       if (!target) return;
@@ -320,11 +310,9 @@ async function runEnrichmentInternal(docId: string): Promise<void> {
         `规则解析设计点 ${result.tablePoints} 个（设计表，置信度 100%）；数据库表候选 ${result.databasePoints} 个，LLM 判定 ${result.acceptedDatabasePoints} 个；文本候选 ${result.textPoints} 个，LLM 判定 ${result.acceptedTextPoints} 个；归纳子系统类别 ${result.taxonomy.length} 个；生成设计单元 ${result.units.length} 个。`,
         ...result.warnings,
       ];
-      target.agentRuns = [...(target.agentRuns ?? []), ...agentRuns].slice(-20);
       recomputeDesignStats(target);
     });
   } catch (err) {
-    const runs = context?.agentRuns ?? [];
     await mutateStore((data) => {
       const target = data.documents.find((d) => d.id === docId);
       if (!target) return;
@@ -339,7 +327,6 @@ async function runEnrichmentInternal(docId: string): Promise<void> {
         ...baseWarnings,
         `LLM 解析失败，已保留规则拆分结果：${(err as Error).message}`,
       ];
-      target.agentRuns = [...(target.agentRuns ?? []), ...runs].slice(-20);
     });
   }
 }

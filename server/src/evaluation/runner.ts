@@ -6,8 +6,7 @@
 
 import type { Campaign } from "../types.js";
 import { LlmClient } from "../llm/client.js";
-import { CancelledError } from "./engine.js";
-import { runAgentEvaluation } from "../agents/main-agent.js";
+import { runEvaluation, CancelledError } from "./engine.js";
 import { getStore, mutateStore, readSettings } from "../store.js";
 import { nowIso } from "../util/id.js";
 
@@ -77,21 +76,18 @@ export async function startCampaignRun(campaignId: string, projectId: string): P
       c.progress = { done: 0, total: 1, message: "正在准备文档与代码索引…" };
       c.provider = useLlm ? "openai-compatible" : "heuristic";
       c.model = useLlm ? settings.model : "规则匹配";
-      c.pipeline = "agent";
       c.profile = c.profile ?? "balanced";
     });
 
-    const result = await runAgentEvaluation({
-      campaignId,
-      projectId,
+    const result = await runEvaluation({
       levels: campaign.levels,
+      profile: campaign.profile ?? "balanced",
       subsystems: campaign.subsystems ?? [],
       requirements: requirementsDoc?.requirements ?? [],
       designUnits: designDoc?.designUnits ?? [],
       snapshot,
       client,
       concurrency: Math.max(1, Math.min(settings.concurrency || 3, 8)),
-      profile: campaign.profile ?? "balanced",
       signal: controller.signal,
       onProgress: (phase, done, total, message) => {
         void update((c) => {
@@ -117,21 +113,16 @@ export async function startCampaignRun(campaignId: string, projectId: string): P
       c.summary = result.summary;
       c.method = result.method;
       c.warnings = warnings;
-      c.pipeline = "agent";
       c.usage = client?.usage;
-      c.agentRuns = [...(c.agentRuns ?? []), ...result.agentRuns].slice(-50);
       c.progress = { done: 1, total: 1, message: `已完成 ${result.relations.length} 条一致性判定` };
       c.finishedAt = nowIso();
     });
   } catch (err) {
     const aborted = controller.signal.aborted || err instanceof CancelledError;
-    const failedRuns = (err as Error & { agentRuns?: Campaign["agentRuns"] }).agentRuns ?? [];
     await update((c) => {
       c.status = aborted ? "cancelled" : "failed";
       c.error = aborted ? "任务已取消" : (err as Error).message;
       c.finishedAt = nowIso();
-      c.pipeline = "agent";
-      c.agentRuns = [...(c.agentRuns ?? []), ...failedRuns].slice(-50);
       c.usage = client?.usage;
       c.progress = { done: 0, total: 1, message: aborted ? "任务已取消" : "评价失败" };
     }).catch(() => undefined);

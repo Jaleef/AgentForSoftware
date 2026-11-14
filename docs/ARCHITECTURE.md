@@ -63,7 +63,6 @@ DOCX ──► ZIP/OOXML 解析 ──► 块序列（段落/表格）
 | `src/evaluation/embeddings.ts` | 可选 OpenAI 兼容 embedding、缓存与归一化 |
 | `src/evaluation/hybrid.ts` | 义务级 BM25F/Dense/Legacy 召回、RRF 融合与结构重排 |
 | `src/evaluation/rerank.ts` | 可选 Cross-Encoder `/rerank` 重排 |
-| `src/agents/` | 确定性 MainAgent、子 Agent 契约、运行器、AgentRun 审计 |
 | `src/evaluation/engine.ts` | 批量 LLM 判定、结果校验、启发式回退、进度与取消 |
 | `src/evaluation/summary.ts` | 覆盖率、得分、分子系统/类型分桶、P0/P1/P2 |
 | `src/evaluation/runner.ts` | 任务生命周期、LLM 预检、持久化进度、取消、重启恢复 |
@@ -154,13 +153,7 @@ XML 解析器支持命名空间前缀、属性、CDATA、注释、字符实体�
 
 ## 5. 评价执行
 
-评价由 `runAgentEvaluation` 编排：
-
-1. 主 Agent 过滤子系统、创建 `AgentContext`；
-2. 按层级调用需求→设计 / 设计→代码子 Agent；
-3. 子 Agent 内部调用现有 `runEvaluation` 单层级实现；
-4. 主 Agent 合并 relations，并用 `computeSummary` 重新汇总；
-5. 子 Agent 执行写入 `Campaign.agentRuns`。
+评价由 `runEvaluation`（`server/src/evaluation/engine.ts`）直接编排：先按子系统过滤，再依次执行需求→设计、设计→代码两个层级，最后用 `computeSummary` 汇总。`runner.ts` 只负责任务生命周期、LLM 预检、进度持久化、取消和重启恢复。
 
 具体步骤：
 

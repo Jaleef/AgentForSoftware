@@ -22,7 +22,6 @@ related_code: []
 | DOC-UI-001 | [功能与界面](功能与界面.md) | frontend | approved | 页面能力、操作流程、截图 |
 | DOC-FLOW-001 | [数据流](数据流.md) | backend | approved | 每类操作的调用链、落盘和失败回退 |
 | DOC-ARCH-001 | [架构说明](ARCHITECTURE.md) | architecture | approved | 模块、解析器、存储、评价执行 |
-| DOC-AGENT-001 | [Agent 架构](Agent架构.md) | architecture | approved | 主/子 Agent、契约、预算、审计 |
 | DOC-DEPS-001 | [依赖与适配层](依赖与适配层.md) | architecture | approved | 成熟库、适配层、注释和替换边界 |
 | DOC-EVAL-001 | [评价口径](EVALUATION.md) | architecture | approved | 状态、覆盖、置信度、评分、LLM 契约 |
 | DOC-RET-001 | [检索](检索.md) | architecture | approved | BM25F、Dense、RRF、Rerank |
@@ -41,10 +40,10 @@ related_code: []
 | 角色 | 建议顺序 |
 | --- | --- |
 | 新用户 | README → 功能与界面 → 配置与运行 |
-| 开发者 | 架构说明 → Agent 架构 → 数据流 → API → 测试与验收 |
+| 开发者 | 架构说明 → 数据流 → API → 测试与验收 |
 | 评审者 | 评价口径 → 检索 → 测试与验收 |
 | 运维者 | 配置与运行 → 限制与路线图 → 数据流 |
-| 架构评审 | 架构说明 → Agent 架构 → ADR → 数据流 |
+| 架构评审 | 架构说明 → ADR → 数据流 |
 
 ## 3. 单一来源规则
 

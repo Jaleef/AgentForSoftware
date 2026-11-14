@@ -100,7 +100,6 @@ rel_xxx   关系
 requirements / requirementPoints / subsystemTaxonomy
 designUnits / designPoints / designSubsystemTaxonomy
 outline
-agentRuns
 ```
 
 ### Campaign
@@ -120,7 +119,6 @@ agentRuns
   relations: Relation[];
   summary?: CampaignSummary;
   warnings?: string[];
-  agentRuns?: AgentRun[];
   error?;
   createdAt; startedAt?; finishedAt?;
 }
@@ -165,20 +163,6 @@ agentRuns
   coverageRatio?;
   obligations?: RelationObligation[];
   targetCoverages?: TargetCoverage[];
-}
-```
-
-### AgentRun
-
-```ts
-{
-  id; agent; version; stage;
-  status: "running" | "completed" | "failed" | "skipped";
-  startedAt; finishedAt?;
-  model?; inputHash?; outputSummary?;
-  warnings: string[];
-  metrics?: { llmCalls; durationMs };
-  error?;
 }
 ```
 
@@ -573,7 +557,7 @@ agentRuns
 
 ### GET `/api/projects/:projectId/campaigns/:campaignId`
 
-完整任务详情，包含 `relations`、`summary`、`agentRuns`、`profile`、`usage`。
+完整任务详情，包含 `relations`、`summary`、`profile`、`usage`。
 
 ### GET `/api/projects/:projectId/campaigns/:campaignId?statusOnly=1`
 
@@ -581,7 +565,6 @@ agentRuns
 
 ```text
 relations = []
-agentRuns = 最近 5 条
 ```
 
 其余进度字段正常返回。
