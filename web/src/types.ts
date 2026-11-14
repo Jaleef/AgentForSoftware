@@ -341,6 +341,14 @@ export interface CampaignSummary {
   findings: { p0: number; p1: number; p2: number };
 }
 
+export type EvaluationProfile = "economy" | "balanced" | "quality";
+
+export interface LlmUsage {
+  promptTokens: number;
+  completionTokens: number;
+  llmCalls: number;
+}
+
 export interface AgentRun {
   id: string;
   agent: string;
@@ -379,6 +387,8 @@ export interface Campaign {
   finishedAt?: string;
   pipeline?: "legacy" | "agent";
   agentRuns?: AgentRun[];
+  profile?: EvaluationProfile;
+  usage?: LlmUsage;
 }
 
 export interface LlmSettings {

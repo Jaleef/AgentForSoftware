@@ -38,10 +38,10 @@ import type { Campaign, DocumentKind, DocumentSummary, SnapshotMeta } from "../t
 export function ProjectDetailPage() {
   const { projectId = "" } = useParams();
   const navigate = useNavigate();
-  const project = useResource(() => api.getProject(projectId), [projectId]);
-  const documents = useResource(() => api.listDocuments(projectId), [projectId]);
-  const snapshots = useResource(() => api.listSnapshots(projectId), [projectId]);
-  const campaigns = useResource(() => api.listCampaigns(projectId), [projectId]);
+  const project = useResource(() => api.getProject(projectId), [projectId], { key: "project" });
+  const documents = useResource(() => api.listDocuments(projectId), [projectId], { key: "documents" });
+  const snapshots = useResource(() => api.listSnapshots(projectId), [projectId], { key: "snapshots" });
+  const campaigns = useResource(() => api.listCampaigns(projectId), [projectId], { key: "campaigns" });
 
   const [useLlm, setUseLlm] = useState(true);
   const [uploading, setUploading] = useState<DocumentKind | null>(null);

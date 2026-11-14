@@ -41,7 +41,7 @@ export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const projectId = projectIdFromPath(location.pathname);
-  const projects = useResource(() => api.listProjects(), []);
+  const projects = useResource(() => api.listProjects(), [], { key: "projects-nav" });
   const selectedId = projectId ?? projects.data?.[0]?.id ?? "";
   const current = projects.data?.find((p) => p.id === selectedId);
 

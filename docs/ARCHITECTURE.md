@@ -49,15 +49,15 @@ DOCX ──► ZIP/OOXML 解析 ──► 块序列（段落/表格）
 
 | 路径 | 职责 |
 | --- | --- |
-| `src/parsers/zip.ts` | 最小 ZIP 读取器（stored/deflate），读取 `word/document.xml`、`styles.xml`、`docProps` |
-| `src/parsers/xml.ts` | 容错 XML DOM 解析器，保留元素顺序与属性 |
+| `src/parsers/zip.ts` | fflate 适配层：解压 DOCX OOXML entry |
+| `src/parsers/xml.ts` | fast-xml-parser 适配层：保持顺序并转换为 XmlNode |
 | `src/parsers/docx.ts` | OOXML 正文遍历：段落样式、标题层级、表格、合并单元格、分页标记、页码/行号估算 |
 | `src/parsers/requirements.ts` | 需求点抽取（表格规则点 + 文本候选点）、规则回退单元、稳定编号 |
 | `src/parsers/design.ts` | 设计点抽取（设计表规则点、数据库/文本候选点）、规则回退单元、字段与接口义务 |
 | `src/parsers/code.ts` | 代码目录遍历、多语言符号/路由/模型抽取、代码树构建 |
 | `src/llm/requirements.ts` | 文本需求点判定、LLM 生成需求单元 |
 | `src/llm/design.ts` | 文本/数据库设计点判定、LLM 生成设计单元 |
-| `src/llm/taxonomy.ts` | 从需求/设计章节路径归纳统一子系统分类 |
+| `src/llm/taxonomy.ts` | auto：章节路径优先，质量差时 LLM 语义归纳 |
 | `src/evaluation/retrieval.ts` | Legacy 词面检索、设计/代码索引、类型亲和度 |
 | `src/evaluation/obligations.ts` | 需求义务稳定编号（O1..On） |
 | `src/evaluation/embeddings.ts` | 可选 OpenAI 兼容 embedding、缓存与归一化 |
@@ -67,7 +67,7 @@ DOCX ──► ZIP/OOXML 解析 ──► 块序列（段落/表格）
 | `src/evaluation/engine.ts` | 批量 LLM 判定、结果校验、启发式回退、进度与取消 |
 | `src/evaluation/summary.ts` | 覆盖率、得分、分子系统/类型分桶、P0/P1/P2 |
 | `src/evaluation/runner.ts` | 任务生命周期、LLM 预检、持久化进度、取消、重启恢复 |
-| `src/llm/client.ts` | OpenAI 兼容 Chat Completions、JSON 解析、重试、并发控制、连接测试 |
+| `src/llm/client.ts` | openai SDK 适配层：Chat Completions、JSON/重试/usage/连接测试 |
 | `src/services/documents.ts` | 上传落盘、解析、统计、重新拆分、后台 LLM 整理 |
 | `src/services/requirements.ts` | 手工新增/删除需求单元、`SRS-MAN-NNN` 编号、同步需求点 |
 | `src/services/design.ts` | 手工新增/删除设计单元、`SDD-MAN-NNN` 编号、同步设计点 |
@@ -117,7 +117,7 @@ XML 解析器支持命名空间前缀、属性、CDATA、注释、字符实体�
 | --- | --- | --- | --- |
 | 需求点 | 需求表 | 含 `需求描述` 或 `需求名称`，且含 `需求说明`/`测试规程`/`需求ID`；一张表 = 一个需求点 | `origin=rule`，`confidence=1.0` |
 | 需求点 | 纯文字叶子章节 | 叶节点章节中未被过滤的正文段落作为候选，例如 `3.5.2 外部系统接口`；由 LLM 判断是否为需求点 | `origin=llm`，置信度由 LLM 给出 |
-| 子系统分类 | 全部已接受需求点的章节路径 | LLM 把章节路径归纳为 3–8 个概括类别，并输出“章节路径 → 类别”映射 | `SubsystemCategory[]`，类别名与章节列表 |
+| 子系统分类 | 全部已接受需求点的章节路径 | auto：先按章节深度分组；其他占比过高时用 LLM 归纳 | `SubsystemCategory[]`，类别名与章节列表 |
 | 需求单元 | 全部已接受需求点 | LLM 生成标题、类型、摘要、原子义务、关键词；子系统取分类映射 | 继承需求点来源与置信度 |
 
 - 文本候选的过滤只排除目录、图题、过短文本、纯标签等结构噪声，不按章节名判断。
@@ -135,7 +135,7 @@ XML 解析器支持命名空间前缀、属性、CDATA、注释、字符实体�
 | 设计点 | 7×2 / 6×2 设计表 | 含 `模块编号`/`子功能编号` + 功能描述；一张表 = 一个设计点 | `origin=rule`，`confidence=1.0` |
 | 设计点 | 数据库表 | 表头含 `字段名称` + `字段类型/字段含义`，字段结构保留为候选数据 | `origin=llm`，由 LLM 判定是否构成数据表设计单元 |
 | 设计点 | 文本章节 | 叶子章节的正文/页面描述/UI 表格作为候选 | `origin=llm`，由 LLM 判定是否构成设计单元 |
-| 子系统分类 | 已接受设计点的章节路径 | LLM 归纳 3–8 个概括类别并建立路径映射 | `designSubsystemTaxonomy` |
+| 子系统分类 | 已接受设计点的章节路径 | auto：先按章节深度分组；质量差时用 LLM 归纳 | `designSubsystemTaxonomy` |
 | 设计单元 | 全部已接受设计点 | LLM 生成名称、类型、摘要、设计义务、关键词；结构化表保持类型/接口/输入输出 | 继承设计点来源与置信度 |
 
 - 每个设计点保存带编号的 `chapterPath`，例如 `5 详细设计 / 5.1 平台模块详细设计 / 5.1.1 管理模块设计 / 5.1.1.4 数据库管理`。
@@ -196,6 +196,7 @@ snapshots(id, project_id, created_at, payload)
 campaigns(id, project_id, status, created_at, updated_at, payload)
 settings(id=1, payload, updated_at)
 meta(key, value)
+coverage_cache(cache_key, model, prompt_version, payload, created_at, last_used_at)
 ```
 
 `payload` 保存完整对象 JSON，因此 `StoreData` 和所有 API 不变：

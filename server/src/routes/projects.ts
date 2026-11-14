@@ -13,6 +13,7 @@ import type { Project } from "../types.js";
 
 export const projectsRouter = Router();
 
+// 前端入口：项目列表页与顶部项目切换下拉（web/src/pages/ProjectsPage.tsx:22、web/src/components/Layout.tsx:44）
 projectsRouter.get("/projects", async (_req, res) => {
   const data = await getStore();
   const projects = [...data.projects]
@@ -25,6 +26,8 @@ projectsRouter.get("/projects", async (_req, res) => {
  * 创建项目。
  *
  * 写入项目基本信息并返回项目详情。
+ *
+ * 前端入口：项目列表页「创建项目」按钮（ProjectsPage.tsx:36）
  */
 projectsRouter.post("/projects", async (req, res) => {
   const name = String(req.body?.name ?? "").trim();
@@ -51,6 +54,7 @@ projectsRouter.post("/projects", async (req, res) => {
   res.status(201).json({ project });
 });
 
+// 前端入口：进入项目详情/评价/报告页时加载项目基本信息（ProjectDetailPage.tsx:41、EvaluationPage.tsx:36、ReportsPage.tsx:23、ReportDetailPage.tsx:37）
 projectsRouter.get("/projects/:projectId", async (req, res) => {
   const data = await getStore();
   const project = data.projects.find((p) => p.id === req.params.projectId);
@@ -61,29 +65,7 @@ projectsRouter.get("/projects/:projectId", async (req, res) => {
   res.json({ project: projectOverview(data, project) });
 });
 
-projectsRouter.patch("/projects/:projectId", async (req, res) => {
-  const projectId = req.params.projectId;
-  const name = req.body?.name !== undefined ? String(req.body.name).trim() : undefined;
-  const description = req.body?.description !== undefined ? String(req.body.description).trim() : undefined;
-  if (name !== undefined && (!name || name.length > 80)) {
-    res.status(400).json({ error: "项目名称不能为空且不能超过 80 个字符" });
-    return;
-  }
-  const project = await mutateStore((data) => {
-    const target = data.projects.find((p) => p.id === projectId);
-    if (!target) return undefined;
-    if (name !== undefined) target.name = name;
-    if (description !== undefined) target.description = description.slice(0, 500);
-    target.updatedAt = nowIso();
-    return target;
-  });
-  if (!project) {
-    res.status(404).json({ error: "项目不存在" });
-    return;
-  }
-  res.json({ project });
-});
-
+// 前端入口：项目详情页「删除项目」按钮（ProjectDetailPage.tsx:168）
 projectsRouter.delete("/projects/:projectId", async (req, res) => {
   const projectId = req.params.projectId;
   const removed = await mutateStore((data) => {
@@ -105,14 +87,4 @@ projectsRouter.delete("/projects/:projectId", async (req, res) => {
     /* ignore */
   }
   res.json({ ok: true });
-});
-
-projectsRouter.get("/projects/:projectId/overview", async (req, res) => {
-  const data = await getStore();
-  const project = data.projects.find((p) => p.id === req.params.projectId);
-  if (!project) {
-    res.status(404).json({ error: "项目不存在" });
-    return;
-  }
-  res.json({ overview: projectOverview(data, project) });
 });

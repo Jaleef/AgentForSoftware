@@ -14,7 +14,7 @@ import {
 } from "../parsers/requirements.js";
 import { cleanText } from "../util/text.js";
 import {
-  generateSubsystemTaxonomy,
+  resolveTaxonomy,
   taxonomyCategoryFor,
   type TaxonomyResult,
 } from "./taxonomy.js";
@@ -257,14 +257,12 @@ export async function runRequirementAgent(
     warnings.push(`${textPoints - judgedTextPoints} 个文本候选未得到 LLM 判定，暂未纳入需求单元。`);
   }
   const acceptedTextPoints = points.filter((point) => point.kind === "text" && point.accepted).length;
-  onProgress?.("LLM 归纳子系统类别…");
-  const taxonomy = await generateSubsystemTaxonomy(
-    points.filter((point) => point.judged && point.accepted),
-    client,
-  );
+  onProgress?.("归纳子系统类别…");
+  const acceptedPoints = points.filter((point) => point.judged && point.accepted);
+  const taxonomy = await resolveTaxonomy(acceptedPoints, client);
   warnings.push(...taxonomy.warnings);
-  if (!taxonomy.usedLlm && points.some((point) => point.accepted)) {
-    warnings.push("未成功生成子系统分类，需求单元将统一归入“全局”。");
+  if (taxonomy.source === "none" && points.some((point) => point.accepted)) {
+    warnings.push("未能生成子系统分类，需求单元将统一归入“全局”。");
   }
 
   onProgress?.(`LLM 生成需求单元（${points.filter((p) => p.accepted).length} 个需求点）…`);
@@ -290,4 +288,5 @@ export async function runRequirementAgent(
     usedLlm: judgement.usedLlm || generation.usedLlm || taxonomy.usedLlm,
   };
 }
+
 

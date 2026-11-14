@@ -59,6 +59,29 @@ interface EmbeddingResponse {
   error?: { message?: string };
 }
 
+/**
+ * 调用 embedding 服务，并在网关限制 batch 大小时自动二分重试。
+ *
+ * 当前阿里云兼容网关限制单批不超过 25 条；代码允许配置 32/64，因此不能
+ * 假设所有 OpenAI 兼容服务都支持同一批大小。
+ */
+async function requestBatchAdaptive(config: EmbeddingConfig, batch: string[]): Promise<number[][]> {
+  try {
+    return await requestBatch(config, batch);
+  } catch (error) {
+    const message = (error as Error).message;
+    if (batch.length > 1 && /batch size|larger than|too large|HTTP 400/i.test(message)) {
+      const middle = Math.ceil(batch.length / 2);
+      const [left, right] = await Promise.all([
+        requestBatchAdaptive(config, batch.slice(0, middle)),
+        requestBatchAdaptive(config, batch.slice(middle)),
+      ]);
+      return [...left, ...right];
+    }
+    throw error;
+  }
+}
+
 async function requestBatch(config: EmbeddingConfig, batch: string[]): Promise<number[][]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -115,7 +138,7 @@ export async function embedTexts(texts: string[]): Promise<number[][] | undefine
   const missing = unique.filter((text) => !cache.has(cacheKey(config, text)));
   for (let i = 0; i < missing.length; i += config.batchSize) {
     const batch = missing.slice(i, i + config.batchSize);
-    const vectors = await requestBatch(config, batch);
+    const vectors = await requestBatchAdaptive(config, batch);
     batch.forEach((text, index) => cache.set(cacheKey(config, text), vectors[index]));
   }
   return texts.map((text) => cache.get(cacheKey(config, text)) as number[]);

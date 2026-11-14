@@ -50,7 +50,9 @@ const emptyManualDraft: ManualRequirementDraft = {
 export function RequirementsPage() {
   const { projectId = "" } = useParams();
   const navigate = useNavigate();
-  const resource = useResource(() => api.getDocument(projectId, "srs"), [projectId]);
+  const resource = useResource(() => api.getDocument(projectId, "srs"), [projectId], {
+    key: "document-srs",
+  });
   const doc = resource.data;
 
   const [origin, setOrigin] = useState("全部");

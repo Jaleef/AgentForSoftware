@@ -1,0 +1,12 @@
+{
+  "ignoreExportsUsedInFile": true,
+  "ignore": [
+    "server/src/tools/**"
+  ],
+  "rules": {
+    "files": "error",
+    "exports": "off",
+    "types": "off",
+    "dependencies": "off"
+  }
+}

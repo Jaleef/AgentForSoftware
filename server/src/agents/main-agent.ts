@@ -32,6 +32,7 @@ export interface EvaluationTask {
   snapshot?: CodeSnapshot;
   client?: LlmClient;
   concurrency: number;
+  profile?: "economy" | "balanced" | "quality";
   signal?: AbortSignal;
   onProgress?: (phase: string, done: number, total: number, message: string) => void;
 }
@@ -84,6 +85,7 @@ export async function runAgentEvaluation(task: EvaluationTask): Promise<AgentEva
           designUnits,
           client: task.client,
           concurrency: task.concurrency,
+          profile: task.profile,
         },
         context,
       );

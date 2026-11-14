@@ -10,6 +10,7 @@
  * 未配置 EMBEDDING_MODEL 或向量调用失败时，自动退回 BM25F + Legacy。
  */
 
+import MiniSearch from "minisearch";
 import type { DesignUnit, RequirementUnit } from "../types.js";
 import { cleanText, overlapScore, tokenSet, tokenize } from "../util/text.js";
 import {
@@ -22,30 +23,35 @@ import { requirementObligations, type RequirementObligationItem } from "./obliga
 import { embedTexts, embeddingConfig } from "./embeddings.js";
 import { rerankCandidates, rerankConfig } from "./rerank.js";
 
-const BM25_K1 = 1.35;
-const BM25_B = 0.72;
 const RRF_K = 60;
 
-const BM25_FIELDS: Array<{ name: string; weight: number; text: (unit: DesignUnit) => string }> = [
-  { name: "name", weight: 3.0, text: (unit) => unit.name },
-  { name: "interface", weight: 2.5, text: (unit) => unit.interfaceText },
-  { name: "obligations", weight: 2.0, text: (unit) => unit.obligations.join(" ") },
-  { name: "fields", weight: 1.5, text: (unit) => unit.fields.map((field) => `${field.name} ${field.meaning}`).join(" ") },
-  { name: "summary", weight: 1.5, text: (unit) => unit.summary },
-  { name: "keywords", weight: 1.2, text: (unit) => unit.keywords.join(" ") },
-  { name: "description", weight: 1.0, text: (unit) => unit.description },
-  { name: "inputOutput", weight: 1.0, text: (unit) => `${unit.input} ${unit.output}` },
-  { name: "subsystem", weight: 0.8, text: (unit) => unit.subsystem },
-];
+const SEARCH_FIELDS = [
+  "name",
+  "interface",
+  "obligations",
+  "fields",
+  "summary",
+  "keywords",
+  "description",
+  "inputOutput",
+  "subsystem",
+] as const;
 
-interface Bm25Field {
-  tf: Map<string, number>;
-  length: number;
-}
+const SEARCH_BOOST: Record<string, number> = {
+  name: 3.0,
+  interface: 2.5,
+  obligations: 2.0,
+  fields: 1.5,
+  summary: 1.5,
+  keywords: 1.2,
+  description: 1.0,
+  inputOutput: 1.0,
+  subsystem: 0.8,
+};
 
-interface Bm25Doc {
-  unit: DesignUnit;
-  fields: Map<string, Bm25Field>;
+interface SearchDocument {
+  id: string;
+  [field: string]: string;
 }
 
 interface DenseDoc {
@@ -80,72 +86,25 @@ export interface HybridRetrieverOptions {
   useDense?: boolean;
 }
 
-function docFieldStats(unit: DesignUnit): Map<string, Bm25Field> {
-  const fields = new Map<string, Bm25Field>();
-  for (const definition of BM25_FIELDS) {
-    const tokens = tokenize(definition.text(unit));
-    const tf = new Map<string, number>();
-    for (const token of tokens) tf.set(token, (tf.get(token) ?? 0) + 1);
-    fields.set(definition.name, { tf, length: tokens.length });
-  }
-  return fields;
-}
-
-function buildBm25Docs(units: DesignUnit[]): {
-  docs: Bm25Doc[];
-  df: Map<string, number>;
-  avgLengths: Map<string, number>;
-} {
-  const docs = units.map((unit) => ({ unit, fields: docFieldStats(unit) }));
-  const df = new Map<string, number>();
-  const totals = new Map<string, number>();
-  for (const doc of docs) {
-    const seen = new Set<string>();
-    for (const [field, stat] of doc.fields) {
-      totals.set(field, (totals.get(field) ?? 0) + stat.length);
-      for (const term of stat.tf.keys()) {
-        if (!seen.has(term)) {
-          seen.add(term);
-          df.set(term, (df.get(term) ?? 0) + 1);
-        }
-      }
-    }
-  }
-  const avgLengths = new Map<string, number>();
-  for (const field of BM25_FIELDS) {
-    const total = totals.get(field.name) ?? 0;
-    avgLengths.set(field.name, docs.length ? total / docs.length : 1);
-  }
-  return { docs, df, avgLengths };
-}
-
-function bm25Score(
-  queryTokens: string[],
-  doc: Bm25Doc,
-  df: Map<string, number>,
-  avgLengths: Map<string, number>,
-  totalDocs: number,
-): number {
-  let score = 0;
-  const unique = [...new Set(queryTokens)];
-  for (const term of unique) {
-    const docFreq = df.get(term) ?? 0;
-    if (!docFreq) continue;
-    const idf = Math.log(1 + (totalDocs - docFreq + 0.5) / (docFreq + 0.5));
-    let tfNorm = 0;
-    for (const definition of BM25_FIELDS) {
-      const stat = doc.fields.get(definition.name);
-      if (!stat) continue;
-      const tf = stat.tf.get(term) ?? 0;
-      if (!tf) continue;
-      const avg = avgLengths.get(definition.name) || 1;
-      const norm = 1 - BM25_B + BM25_B * (stat.length / avg);
-      const termScore = (tf * (BM25_K1 + 1)) / (tf + BM25_K1 * norm);
-      tfNorm += definition.weight * termScore;
-    }
-    score += idf * tfNorm;
-  }
-  return score;
+/**
+ * 构造 MiniSearch 文档。
+ *
+ * 字段名和权重对应原 BM25F；MiniSearch 负责倒排索引、IDF、字段长度归一化
+ * 和 BM25 打分，业务只需要提供字段文本和 boost。
+ */
+function searchDocument(unit: DesignUnit): SearchDocument {
+  return {
+    id: unit.code,
+    name: unit.name,
+    interface: unit.interfaceText,
+    obligations: unit.obligations.join(" "),
+    fields: unit.fields.map((field) => `${field.name} ${field.meaning}`).join(" "),
+    summary: unit.summary,
+    keywords: unit.keywords.join(" "),
+    description: unit.description,
+    inputOutput: `${unit.input} ${unit.output}`,
+    subsystem: unit.subsystem,
+  };
 }
 
 function obligationQueryText(requirement: RequirementUnit, obligation: RequirementObligationItem): string {
@@ -205,7 +164,13 @@ export async function buildHybridRetriever(
   const finalLimit = Math.max(1, options.finalLimit ?? 8);
   const channelLimit = Math.max(1, options.channelLimit ?? 16);
   const warnings: string[] = [];
-  const bm25 = buildBm25Docs(designUnits);
+  // 调用 MiniSearch 建立字段索引；tokenize 仍使用项目的业务分词器。
+  const search = new MiniSearch<SearchDocument>({
+    idField: "id",
+    fields: [...SEARCH_FIELDS],
+    tokenize: (text) => tokenize(text),
+  });
+  search.addAll(designUnits.map(searchDocument));
   const legacyIndex: DesignIndexEntry[] = designUnits.map((unit) => {
     const text = [
       unit.name,
@@ -250,16 +215,11 @@ export async function buildHybridRetriever(
   const codeToUnit = new Map(designUnits.map((unit) => [unit.code, unit]));
 
   function topBm25(queryText: string): string[] {
-    const queryTokens = tokenize(queryText);
-    const scored = bm25.docs
-      .map((doc) => ({
-        code: doc.unit.code,
-        score: bm25Score(queryTokens, doc, bm25.df, bm25.avgLengths, bm25.docs.length),
-      }))
-      .filter((item) => item.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, channelLimit);
-    return scored.map((item) => item.code);
+    // 调用 MiniSearch.search；字段 boost 对应原 BM25F 权重。
+    return search
+      .search(queryText, { boost: SEARCH_BOOST, combineWith: "OR" })
+      .slice(0, channelLimit)
+      .map((result) => String(result.id));
   }
 
   function topDense(queryText: string): string[] {
@@ -284,7 +244,6 @@ export async function buildHybridRetriever(
       rankDesignCandidates(requirement, legacyIndex, channelLimit),
       channelLimit,
     );
-    const legacyRank = new Map(legacyRanking.map((code, index) => [code, index + 1]));
     const titleTokens = tokenSet(`${requirement.title} ${requirement.keywords.join(" ")}`);
     const aggregate = new Map<
       string,

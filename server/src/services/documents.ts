@@ -4,9 +4,9 @@
  * 负责 DOCX 落盘、解析结果保存、重新拆分、LLM 整理、统计重算和恢复任务。
  */
 
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { DocumentKind, DocumentStats, ParsedDocument, StoredDocument } from "../types.js";
+import type { DocumentKind, ParsedDocument, StoredDocument } from "../types.js";
 import { parseDocxBuffer } from "../parsers/docx.js";
 import { parseRequirements, extractRequirementPoints } from "../parsers/requirements.js";
 import { parseDesign, extractDesignPoints } from "../parsers/design.js";
@@ -47,10 +47,6 @@ export function versionFromFilename(name: string): string {
 export function parseBuffer(buffer: Buffer, kind: DocumentKind): ParsedDocument {
   const docx = parseDocxBuffer(buffer);
   return kind === "srs" ? parseRequirements(docx) : parseDesign(docx);
-}
-
-export function statsFor(doc: StoredDocument): DocumentStats {
-  return doc.stats;
 }
 
 export function recomputeRequirementStats(doc: StoredDocument): void {
@@ -416,12 +412,6 @@ export function documentSummary(doc: StoredDocument) {
     designCount: doc.designUnits.length,
     designPointCount: (doc.designPoints ?? []).length,
   };
-}
-
-export function ensureProjectUploadDir(projectId: string): string {
-  const dir = projectDir(projectId);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  return dir;
 }
 
 export function recoverInterruptedDocuments(): void {

@@ -59,7 +59,7 @@ MainAgent（确定性编排）
 | ---------------------------- | ------------------------------------------------ | -------------------------------------------------------------- |
 | `requirement-split`        | `agents/subagents/requirement-split.agent.ts`  | 包装 `runRequirementAgent`：文本点判定 + taxonomy + 需求单元 |
 | `design-split`             | `agents/subagents/design-split.agent.ts`       | 包装 `runDesignAgent`：设计点判定 + taxonomy + 设计单元      |
-| `taxonomy`                 | `agents/subagents/taxonomy.agent.ts`           | 章节路径归纳子系统                                             |
+
 | `requirement-design-judge` | `agents/subagents/requirement-design.agent.ts` | 义务级检索 + LLM 覆盖判定 + 覆盖率                             |
 | `design-code-judge`        | `agents/subagents/design-code.agent.ts`        | 代码符号检索 + LLM 判定                                        |
 

@@ -174,7 +174,12 @@ export const api = {
     ).then((r) => r.campaign),
   createCampaign: (
     projectId: string,
-    payload: { name?: string; levels: Array<"requirement_design" | "design_code">; subsystems: string[] },
+    payload: {
+      name?: string;
+      levels: Array<"requirement_design" | "design_code">;
+      subsystems: string[];
+      profile?: "economy" | "balanced" | "quality";
+    },
   ) =>
     request<{ campaign: Campaign }>(`/projects/${projectId}/campaigns`, {
       method: "POST",
@@ -182,8 +187,6 @@ export const api = {
     }).then((r) => r.campaign),
   cancelCampaign: (projectId: string, campaignId: string) =>
     request<{ ok: boolean }>(`/projects/${projectId}/campaigns/${campaignId}/cancel`, { method: "POST" }),
-  deleteCampaign: (projectId: string, campaignId: string) =>
-    request<{ ok: boolean }>(`/projects/${projectId}/campaigns/${campaignId}`, { method: "DELETE" }),
   reviewRelation: (
     projectId: string,
     campaignId: string,

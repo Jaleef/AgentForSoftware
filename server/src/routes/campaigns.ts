@@ -21,6 +21,8 @@ const LEVELS: RelationLevel[] = ["requirement_design", "design_code"];
  * 创建评价任务。
  *
  * 校验文档/层级/子系统，写入 queued 任务并异步启动 runner。
+ *
+ * 前端入口：项目详情页「创建评价」、评价页「创建评价」（ProjectDetailPage.tsx:186、EvaluationPage.tsx:130）
  */
 campaignsRouter.post("/projects/:projectId/campaigns", async (req, res) => {
   const projectId = req.params.projectId;
@@ -79,6 +81,11 @@ campaignsRouter.post("/projects/:projectId/campaigns", async (req, res) => {
   const subsystems = Array.isArray(req.body?.subsystems)
     ? (req.body.subsystems as unknown[]).filter((s): s is string => typeof s === "string" && knownSubsystems.has(s))
     : [];
+  const requestedProfile = String(req.body?.profile ?? "");
+  const profile =
+    requestedProfile === "economy" || requestedProfile === "quality"
+      ? requestedProfile
+      : "balanced";
 
   const stamp = new Date();
   const defaultName = `${levels.includes("requirement_design") ? "需求→设计" : ""}${levels.length === 2 ? " + " : ""
@@ -92,6 +99,7 @@ campaignsRouter.post("/projects/:projectId/campaigns", async (req, res) => {
     name: String(req.body?.name ?? "").trim().slice(0, 120) || defaultName,
     levels,
     subsystems,
+    profile,
     status: "queued",
     phase: "queued",
     progress: { done: 0, total: 1, message: "任务已排队" },
@@ -112,6 +120,7 @@ campaignsRouter.post("/projects/:projectId/campaigns", async (req, res) => {
   res.status(201).json({ campaign });
 });
 
+// 前端入口：项目详情页评价历史、报告列表、评价页活动选择（ProjectDetailPage.tsx:44、ReportsPage.tsx:24、EvaluationPage.tsx:45）
 campaignsRouter.get("/projects/:projectId/campaigns", async (req, res) => {
   const data = await getStore();
   const campaigns = projectCampaigns(data, req.params.projectId).map((campaign) => ({
@@ -125,6 +134,8 @@ campaignsRouter.get("/projects/:projectId/campaigns", async (req, res) => {
  * 查询评价任务详情。
  *
  * 支持 statusOnly=1 的轻量轮询，避免重复传输完整关系列表。
+ *
+ * 前端入口：评价页加载活动详情、报告详情页；?statusOnly=1 供评价页轮询进度（EvaluationPage.tsx:49、92、ReportDetailPage.tsx:34）
  */
 campaignsRouter.get("/projects/:projectId/campaigns/:campaignId", async (req, res) => {
   const data = await getStore();
@@ -147,6 +158,7 @@ campaignsRouter.get("/projects/:projectId/campaigns/:campaignId", async (req, re
   res.json({ campaign });
 });
 
+// 前端入口：评价页「取消任务」按钮（EvaluationPage.tsx:162）
 campaignsRouter.post("/projects/:projectId/campaigns/:campaignId/cancel", async (req, res) => {
   const data = await getStore();
   const campaign = data.campaigns.find((c) => c.id === req.params.campaignId && c.projectId === req.params.projectId);
@@ -162,21 +174,7 @@ campaignsRouter.post("/projects/:projectId/campaigns/:campaignId/cancel", async 
   res.json({ ok: true });
 });
 
-campaignsRouter.delete("/projects/:projectId/campaigns/:campaignId", async (req, res) => {
-  const removed = await mutateStore((data) => {
-    const before = data.campaigns.length;
-    data.campaigns = data.campaigns.filter(
-      (c) => !(c.id === req.params.campaignId && c.projectId === req.params.projectId),
-    );
-    return data.campaigns.length < before;
-  });
-  if (!removed) {
-    res.status(404).json({ error: "评价任务不存在" });
-    return;
-  }
-  res.json({ ok: true });
-});
-
+// 前端入口：评价页「确认判定/驳回」按钮（EvaluationPage.tsx:151）
 campaignsRouter.patch("/projects/:projectId/campaigns/:campaignId/relations/:relationId", async (req, res) => {
   const reviewStatus = req.body?.reviewStatus;
   if (!["pending", "accepted", "rejected"].includes(reviewStatus)) {
@@ -212,6 +210,7 @@ campaignsRouter.patch("/projects/:projectId/campaigns/:campaignId/relations/:rel
   res.json(result);
 });
 
+// 前端入口：报告页「导出 MD/CSV」、报告详情页「导出 Markdown」（ReportsPage.tsx:141、ReportDetailPage.tsx:93）
 campaignsRouter.get("/projects/:projectId/campaigns/:campaignId/export", async (req, res) => {
   const data = await getStore();
   const campaign = data.campaigns.find((c) => c.id === req.params.campaignId && c.projectId === req.params.projectId);

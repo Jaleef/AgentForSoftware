@@ -64,6 +64,15 @@ CREATE TABLE IF NOT EXISTS settings (
   payload TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS coverage_cache (
+  cache_key TEXT PRIMARY KEY,
+  model TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT NOT NULL
+);
 `;
 
 /** Create tables/indexes and record the schema version. */

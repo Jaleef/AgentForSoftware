@@ -38,6 +38,8 @@ function snapshotTree(snapshot: CodeSnapshot) {
  * 登记代码快照。
  *
  * 扫描代码目录，保存符号、路由、模型和 Git commit。
+ *
+ * 前端入口：项目详情页/代码页「登记代码快照」（ProjectDetailPage.tsx:140、CodePage.tsx:104）
  */
 snapshotsRouter.post("/projects/:projectId/snapshots", async (req, res) => {
   const projectId = req.params.projectId;
@@ -73,6 +75,7 @@ snapshotsRouter.post("/projects/:projectId/snapshots", async (req, res) => {
   }
 });
 
+// 前端入口：项目详情页/评价页加载快照列表（ProjectDetailPage.tsx:43、EvaluationPage.tsx:41）
 snapshotsRouter.get("/projects/:projectId/snapshots", async (req, res) => {
   const data = await getStore();
   res.json({
@@ -83,6 +86,7 @@ snapshotsRouter.get("/projects/:projectId/snapshots", async (req, res) => {
   });
 });
 
+// 前端入口：代码页默认加载最新快照（CodePage.tsx:54）
 snapshotsRouter.get("/projects/:projectId/snapshots/latest", async (req, res) => {
   const data = await getStore();
   const snapshot = data.snapshots
@@ -95,6 +99,7 @@ snapshotsRouter.get("/projects/:projectId/snapshots/latest", async (req, res) =>
   res.json({ snapshot: { ...snapshotMeta(snapshot), tree: snapshotTree(snapshot) } });
 });
 
+// 前端入口：代码页点击文件树中的文件（CodePage.tsx:86）
 snapshotsRouter.get("/projects/:projectId/snapshots/:snapshotId/file", async (req, res) => {
   const data = await getStore();
   const snapshot = data.snapshots.find((s) => s.id === req.params.snapshotId && s.projectId === req.params.projectId);
@@ -111,6 +116,7 @@ snapshotsRouter.get("/projects/:projectId/snapshots/:snapshotId/file", async (re
   res.json({ file });
 });
 
+// 前端入口：项目详情页快照「删除」、代码页删除快照（ProjectDetailPage.tsx:156、CodePage.tsx:119）
 snapshotsRouter.delete("/projects/:projectId/snapshots/:snapshotId", async (req, res) => {
   const removed = await mutateStore((data) => {
     const snapshot = data.snapshots.find((s) => s.id === req.params.snapshotId && s.projectId === req.params.projectId);

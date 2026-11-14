@@ -167,11 +167,21 @@ function handleUnitGeneration(payload) {
 }
 
 function handleRequirementEval(payload) {
-  const items = Array.isArray(payload) ? payload : [];
+  const items = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.requirements)
+      ? payload.requirements
+      : [];
+  const designs = new Map(
+    (Array.isArray(payload?.designs) ? payload.designs : []).map((design) => [design.code, design]),
+  );
   return {
     items: items.map((entry) => {
-      const req = entry.requirement ?? {};
-      const candidates = entry.candidates ?? [];
+      const req = entry.requirement ?? entry;
+      const candidates = entry.candidates
+        ?? (Array.isArray(entry.candidateCodes)
+          ? entry.candidateCodes.map((code) => designs.get(code)).filter(Boolean)
+          : []);
       const obligations = Array.isArray(req.obligations) ? req.obligations : [];
       if (!candidates.length || !obligations.length) {
         return {

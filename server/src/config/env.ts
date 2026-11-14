@@ -7,7 +7,14 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse as parseDotenv } from "dotenv";
 import type { LlmSettings } from "../types.js";
+
+/*
+ * .env 中所有键都会由 dotenv 载入 process.env；本文件只负责 LLM 配置和
+ * 来源诊断。EMBEDDING_* 由 evaluation/embeddings.ts 读取，RERANK_* 由
+ * evaluation/rerank.ts 读取，避免把可选检索配置耦合进 LLM 设置。
+ */
 
 const here = dirname(fileURLToPath(import.meta.url));
 /** repo root: server/src/config -> server/src -> server -> repo */
@@ -44,26 +51,14 @@ function detectDevelopment(): boolean {
 
 const isDevelopment = detectDevelopment();
 
+/**
+ * 使用 dotenv.parse 读取 .env 文本。
+ *
+ * 这里刻意不调用 dotenv.config：config 会直接写入 process.env，而本项目
+ * 需要保留“真实进程环境变量优先”的规则，并记录 shadowedKeys 供 UI 诊断。
+ */
 function parseEnvFile(content: string): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#") || line.startsWith(";")) continue;
-    const match = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
-    if (!match) continue;
-    const key = match[1];
-    let value = match[2].trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
-      (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
-    ) {
-      value = value.slice(1, -1);
-    } else {
-      value = value.replace(/\s+#.*$/, "").trim();
-    }
-    values[key] = value;
-  }
-  return values;
+  return parseDotenv(content);
 }
 
 let envLoaded = false;
@@ -115,9 +110,9 @@ function envValue(...names: string[]): EnvValue {
   return { present: false, value: "" };
 }
 
-const envBaseUrl = envValue("LLM_BASE_URL", "OPENAI_BASE_URL", "DEEPSEEK_BASE_URL");
-const envModel = envValue("LLM_MODEL", "OPENAI_MODEL", "DEEPSEEK_MODEL");
-const envApiKey = envValue("LLM_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY");
+const envBaseUrl = envValue("LLM_BASE_URL", "DEEPSEEK_BASE_URL");
+const envApiKey = envValue("LLM_API_KEY", "DEEPSEEK_API_KEY");
+const envModel = envValue("LLM_MODEL", "DEEPSEEK_MODEL");
 const envTemperature = envValue("LLM_TEMPERATURE");
 const envMaxTokens = envValue("LLM_MAX_TOKENS");
 const envConcurrency = envValue("LLM_CONCURRENCY");
@@ -130,16 +125,11 @@ export const envActive =
   isDevelopment &&
   [
     envBaseUrl,
-    envModel,
     envApiKey,
-    envTemperature,
-    envMaxTokens,
-    envConcurrency,
-    envTimeout,
-    envJsonMode,
-    envMock,
-  ].some((value) => value.present);
+    envModel,
+  ].every((value) => value.present);
 
+/** 将存放 bool 类型的字符串 value 转换为布尔值 */
 function boolValue(value: string | undefined): boolean | undefined {
   if (value === undefined) return undefined;
   const v = value.trim().toLowerCase();
@@ -148,6 +138,7 @@ function boolValue(value: string | undefined): boolean | undefined {
   return undefined;
 }
 
+/** 将存放 number 类型的字符串 value 转换为数字 */
 function numberValue(value: string | undefined): number | undefined {
   if (value === undefined || value.trim() === "") return undefined;
   const n = Number(value);

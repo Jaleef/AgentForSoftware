@@ -14,6 +14,7 @@ export interface RequirementDesignInput {
   designUnits: DesignUnit[];
   client?: LlmClient;
   concurrency: number;
+  profile?: "economy" | "balanced" | "quality";
 }
 
 export class RequirementDesignJudgeAgent
@@ -27,6 +28,7 @@ export class RequirementDesignJudgeAgent
     if (context.signal.aborted) throw new Error("任务已取消");
     const result = await runEvaluation({
       levels: ["requirement_design"],
+      profile: input.profile,
       subsystems: [],
       requirements: input.requirements,
       designUnits: input.designUnits,

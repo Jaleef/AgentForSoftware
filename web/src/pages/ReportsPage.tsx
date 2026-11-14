@@ -20,8 +20,8 @@ import type { Campaign } from "../types";
 export function ReportsPage() {
   const { projectId = "" } = useParams();
   const navigate = useNavigate();
-  const project = useResource(() => api.getProject(projectId), [projectId]);
-  const campaigns = useResource(() => api.listCampaigns(projectId), [projectId]);
+  const project = useResource(() => api.getProject(projectId), [projectId], { key: "project" });
+  const campaigns = useResource(() => api.listCampaigns(projectId), [projectId], { key: "campaigns" });
 
   return (
     <>

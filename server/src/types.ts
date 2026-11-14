@@ -399,6 +399,14 @@ export interface CampaignSummary {
   };
 }
 
+export type EvaluationProfile = "economy" | "balanced" | "quality";
+
+export interface LlmUsage {
+  promptTokens: number;
+  completionTokens: number;
+  llmCalls: number;
+}
+
 export interface AgentRun {
   id: string;
   agent: string;
@@ -445,6 +453,8 @@ export interface Campaign {
   /** "agent" for the main/sub-agent pipeline; absent means legacy evaluation. */
   pipeline?: "legacy" | "agent";
   agentRuns?: AgentRun[];
+  profile?: EvaluationProfile;
+  usage?: LlmUsage;
 }
 
 export interface LlmSettings {

@@ -45,6 +45,7 @@ function sanitize(input: Partial<LlmSettings>, base: LlmSettings): LlmSettings {
   };
 }
 
+// 前端入口：设置页加载当前配置（SettingsPage.tsx:51）
 settingsRouter.get("/settings", (_req, res) => {
   res.json(response());
 });
@@ -53,6 +54,8 @@ settingsRouter.get("/settings", (_req, res) => {
  * 保存 LLM 设置。
  *
  * 校验 URL/模型，处理 API Key 保留和开发环境 .env 接管。
+ *
+ * 前端入口：设置页「保存配置」按钮（SettingsPage.tsx:102）
  */
 settingsRouter.put("/settings", (req, res) => {
   if (isEnvActive()) {
@@ -81,6 +84,7 @@ settingsRouter.put("/settings", (req, res) => {
   res.json(response());
 });
 
+// 前端入口：设置页「测试连接」按钮（SettingsPage.tsx:119）
 settingsRouter.post("/settings/test", async (req, res) => {
   const envActive = isEnvActive();
   const meta = getEnvConfigInfo();

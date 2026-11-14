@@ -51,7 +51,9 @@ const KIND_TONE: Record<string, "blue" | "green" | "amber" | "red" | "purple" | 
  */
 export function CodePage() {
   const { projectId = "" } = useParams();
-  const snapshotResource = useResource(() => api.latestSnapshot(projectId), [projectId]);
+  const snapshotResource = useResource(() => api.latestSnapshot(projectId), [projectId], {
+    key: "snapshot-latest",
+  });
   const snapshot = snapshotResource.data;
   const noSnapshot = !snapshot && Boolean(snapshotResource.error?.includes("尚未登记"));
 

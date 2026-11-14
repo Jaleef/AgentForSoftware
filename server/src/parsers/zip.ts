@@ -1,30 +1,32 @@
 /**
- * 最小 ZIP 读取器。
+ * DOCX ZIP 解包适配层。
  *
- * 解压 DOCX 中的 document.xml、styles.xml 和 docProps，不依赖外部二进制。
+ * 调用 fflate.unzipSync 解析 DOCX 的 OOXML 包；对外保留原有 ZipArchive
+ * 接口，避免 docx.ts 依赖第三方库。fflate 是纯 JS、无原生编译依赖，
+ * 支持 Word 常见的 stored/deflate entry。
  */
 
-import { inflateRawSync } from "node:zlib";
-
-interface ZipEntry {
-  name: string;
-  method: number;
-  compressedSize: number;
-  uncompressedSize: number;
-  localHeaderOffset: number;
-}
+import { unzipSync } from "fflate";
 
 /**
- * Minimal, dependency-free ZIP reader for DOCX packages.
- * Supports stored (0) and deflate (8) entries, which covers Word output.
+ * 最小 ZIP 读取器。
+ *
+ * 输入：完整 DOCX Buffer。
+ * 输出：按 entry 名称读取的 Buffer/Text。
+ * 失败：非法 ZIP、加密 ZIP 或损坏 entry 抛出带 DOCX 语义的错误。
  */
 export class ZipArchive {
-  private buffer: Buffer;
-  private entries = new Map<string, ZipEntry>();
+  private entries: Map<string, Uint8Array>;
 
   constructor(buffer: Buffer) {
-    this.buffer = buffer;
-    this.readCentralDirectory();
+    try {
+      const entries = unzipSync(new Uint8Array(buffer));
+      this.entries = new Map(
+        Object.entries(entries).map(([name, data]) => [name.replace(/\\/g, "/"), data]),
+      );
+    } catch (error) {
+      throw new Error(`无法解压 DOCX 压缩包：${(error as Error).message}`);
+    }
   }
 
   list(): string[] {
@@ -37,55 +39,11 @@ export class ZipArchive {
 
   read(name: string): Buffer {
     const entry = this.entries.get(name);
-    if (!entry) throw new Error(`ZIP entry not found: ${name}`);
-    const buf = this.buffer;
-    const lh = entry.localHeaderOffset;
-    if (buf.readUInt32LE(lh) !== 0x04034b50) throw new Error(`Invalid local header for ${name}`);
-    const nameLen = buf.readUInt16LE(lh + 26);
-    const extraLen = buf.readUInt16LE(lh + 28);
-    const dataStart = lh + 30 + nameLen + extraLen;
-    const data = buf.subarray(dataStart, dataStart + entry.compressedSize);
-    if (entry.method === 0) return Buffer.from(data);
-    if (entry.method === 8) return inflateRawSync(data);
-    throw new Error(`Unsupported ZIP compression method ${entry.method} for ${name}`);
+    if (!entry) throw new Error(`DOCX 压缩包缺少 entry：${name}`);
+    return Buffer.from(entry);
   }
 
   readText(name: string): string {
     return this.read(name).toString("utf8");
-  }
-
-  private readCentralDirectory(): void {
-    const buf = this.buffer;
-    const min = Math.max(0, buf.length - 0xffff - 22);
-    let eocd = -1;
-    for (let i = buf.length - 22; i >= min; i--) {
-      if (buf.readUInt32LE(i) === 0x06054b50) {
-        eocd = i;
-        break;
-      }
-    }
-    if (eocd < 0) throw new Error("Not a valid ZIP/DOCX file: end of central directory not found");
-    const count = buf.readUInt16LE(eocd + 10);
-    const cdOffset = buf.readUInt32LE(eocd + 16);
-    let ptr = cdOffset;
-    for (let i = 0; i < count; i++) {
-      if (ptr + 46 > buf.length || buf.readUInt32LE(ptr) !== 0x02014b50) break;
-      const method = buf.readUInt16LE(ptr + 10);
-      const compressedSize = buf.readUInt32LE(ptr + 20);
-      const uncompressedSize = buf.readUInt32LE(ptr + 24);
-      const nameLen = buf.readUInt16LE(ptr + 28);
-      const extraLen = buf.readUInt16LE(ptr + 30);
-      const commentLen = buf.readUInt16LE(ptr + 32);
-      const localHeaderOffset = buf.readUInt32LE(ptr + 42);
-      const name = buf.subarray(ptr + 46, ptr + 46 + nameLen).toString("utf8");
-      this.entries.set(name.replace(/\\/g, "/"), {
-        name,
-        method,
-        compressedSize,
-        uncompressedSize,
-        localHeaderOffset,
-      });
-      ptr += 46 + nameLen + extraLen + commentLen;
-    }
   }
 }

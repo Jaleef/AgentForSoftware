@@ -1,49 +1,55 @@
 /**
  * 前端通用 hooks。
  *
- * 提供资源加载、防抖和定时轮询。
+ * 资源加载使用 @tanstack/react-query；保留防抖和轮询辅助函数。
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+export interface ResourceOptions {
+  /** Stable resource name; prevents different resources on one page sharing a cache key. */
+  key: string;
+  enabled?: boolean;
+  refetchInterval?: number | false;
+}
 
 /**
- * 加载一个异步资源并暴露 loading/error/reload。
+ * 加载一个异步资源并暴露 data/loading/error/reload/setData。
  *
- * 组件卸载后忽略过期响应。
+ * 调用 useQuery；queryKey 由 deps 派生，组件卸载/参数变化时由 React Query
+ * 处理竞态、缓存和取消。setData 用于评价轮询拿到轻量状态后同步缓存。
  */
-export function useResource<T>(loader: () => Promise<T>, deps: unknown[] = []) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [version, setVersion] = useState(0);
+export function useResource<T>(
+  loader: () => Promise<T>,
+  deps: unknown[] = [],
+  options: ResourceOptions,
+) {
+  const queryClient = useQueryClient();
   const loaderRef = useRef(loader);
   loaderRef.current = loader;
 
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    loaderRef
-      .current()
-      .then((value) => {
-        if (!alive) return;
-        setData(value);
-        setError(null);
-      })
-      .catch((err: Error) => {
-        if (!alive) return;
-        setError(err.message);
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, version]);
+  const queryKey = ["resource", options.key, ...deps];
+  const query = useQuery({
+    queryKey,
+    queryFn: () => loaderRef.current(),
+    enabled: options.enabled ?? true,
+    refetchInterval: options.refetchInterval,
+  });
 
-  const reload = useCallback(() => setVersion((v) => v + 1), []);
-  return { data, error, loading, reload, setData };
+  const reload = useCallback(() => query.refetch(), [query]);
+  const setData = useCallback(
+    (value: T) => queryClient.setQueryData(queryKey, value),
+    [queryClient, queryKey],
+  );
+
+  return {
+    data: (query.data ?? null) as T | null,
+    error: query.error instanceof Error ? query.error.message : null,
+    loading: query.isPending,
+    reload,
+    setData,
+  };
 }
 
 /**

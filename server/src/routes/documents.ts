@@ -38,6 +38,8 @@ function requireDocStore(docId: string) {
  * 上传并解析 DOCX 文档。
  *
  * 保存原文件，解析需求/设计点，必要时启动 LLM 整理。
+ *
+ * 前端入口：项目详情页「上传 DOCX」按钮或拖拽上传（ProjectDetailPage.tsx:84）
  */
 documentsRouter.post("/projects/:projectId/documents", upload.single("file"), async (req, res) => {
   const projectId = req.params.projectId;
@@ -77,6 +79,7 @@ documentsRouter.post("/projects/:projectId/documents", upload.single("file"), as
   }
 });
 
+// 前端入口：项目详情页加载需求/设计文档卡片（ProjectDetailPage.tsx:42）
 documentsRouter.get("/projects/:projectId/documents", async (req, res) => {
   const data = await getStore();
   const project = data.projects.find((p) => p.id === req.params.projectId);
@@ -91,6 +94,7 @@ documentsRouter.get("/projects/:projectId/documents", async (req, res) => {
   });
 });
 
+// 前端入口：需求结构页/设计结构页/评价页加载文档内容（RequirementsPage.tsx:53、DesignPage.tsx:64、EvaluationPage.tsx:37）
 documentsRouter.get("/projects/:projectId/documents/:kind", async (req, res) => {
   const kind = req.params.kind as DocumentKind;
   if (kind !== "srs" && kind !== "sdd") {
@@ -113,6 +117,7 @@ documentsRouter.get("/projects/:projectId/documents/:kind", async (req, res) => 
   res.json({ document: doc });
 });
 
+// 前端入口：项目详情页「撤销导入」按钮（ProjectDetailPage.tsx:97）
 documentsRouter.delete("/projects/:projectId/documents/:docId", async (req, res) => {
   const projectId = req.params.projectId;
   const docId = req.params.docId;
@@ -139,6 +144,8 @@ documentsRouter.delete("/projects/:projectId/documents/:docId", async (req, res)
  * 重新拆分文档。
  *
  * 重新抽取需求/设计点，保留人工单元并刷新统计。
+ *
+ * 前端入口：项目详情页「重新拆分」按钮（ProjectDetailPage.tsx:110）
  */
 documentsRouter.post("/projects/:projectId/documents/:docId/reparse", async (req, res) => {
   const doc = await requireDocStore(req.params.docId);
@@ -165,6 +172,8 @@ documentsRouter.post("/projects/:projectId/documents/:docId/reparse", async (req
  * 启动文档 LLM 整理。
  *
  * 对需求/设计候选做判定、子系统分类和单元生成。
+ *
+ * 前端入口：项目详情页「LLM 整理」按钮（ProjectDetailPage.tsx:123）
  */
 documentsRouter.post("/projects/:projectId/documents/:docId/enrich", async (req, res) => {
   const doc = await requireDocStore(req.params.docId);
@@ -192,6 +201,8 @@ documentsRouter.post("/projects/:projectId/documents/:docId/enrich", async (req,
  * 手工新增需求单元。
  *
  * 校验类型并生成 SRS-MAN 编号。
+ *
+ * 前端入口：需求结构页「添加需求单元」弹窗提交（RequirementsPage.tsx:152）
  */
 documentsRouter.post("/projects/:projectId/requirements", async (req, res) => {
   const projectId = req.params.projectId;
@@ -224,6 +235,7 @@ documentsRouter.post("/projects/:projectId/requirements", async (req, res) => {
   }
 });
 
+// 前端入口：需求结构页「删除需求单元」按钮（RequirementsPage.tsx:182）
 documentsRouter.delete("/projects/:projectId/requirements/:code", async (req, res) => {
   const projectId = req.params.projectId;
   const data = await getStore();
@@ -244,6 +256,7 @@ documentsRouter.delete("/projects/:projectId/requirements/:code", async (req, re
   }
 });
 
+// 前端入口：需求结构页「保存需求类型」按钮（RequirementsPage.tsx:120）
 documentsRouter.patch("/projects/:projectId/requirements/:code", async (req, res) => {
   const projectId = req.params.projectId;
   const code = req.params.code;
@@ -282,6 +295,8 @@ documentsRouter.patch("/projects/:projectId/requirements/:code", async (req, res
  * 手工新增设计单元。
  *
  * 校验类型并生成 SDD-MAN 编号。
+ *
+ * 前端入口：设计结构页「添加设计单元」弹窗提交（DesignPage.tsx:168）
  */
 documentsRouter.post("/projects/:projectId/design-units", async (req, res) => {
   const projectId = req.params.projectId;
@@ -311,6 +326,7 @@ documentsRouter.post("/projects/:projectId/design-units", async (req, res) => {
   }
 });
 
+// 前端入口：设计结构页「删除设计单元」按钮（DesignPage.tsx:201）
 documentsRouter.delete("/projects/:projectId/design-units/:code", async (req, res) => {
   const projectId = req.params.projectId;
   const data = await getStore();
@@ -331,6 +347,7 @@ documentsRouter.delete("/projects/:projectId/design-units/:code", async (req, re
   }
 });
 
+// 前端入口：设计结构页「标记审核通过」按钮（DesignPage.tsx:140）
 documentsRouter.patch("/projects/:projectId/design-units/:code", async (req, res) => {
   const projectId = req.params.projectId;
   const code = req.params.code;

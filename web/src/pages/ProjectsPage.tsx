@@ -19,7 +19,7 @@ import type { ProjectSummary } from "../types";
  */
 export function ProjectsPage() {
   const navigate = useNavigate();
-  const projects = useResource(() => api.listProjects(), []);
+  const projects = useResource(() => api.listProjects(), [], { key: "projects" });
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);

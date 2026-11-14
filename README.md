@@ -77,7 +77,7 @@ pnpm build
 | [Agent 架构](docs/Agent架构.md) | 主/子 Agent、预算、审计和失败回退        |
 | [评价口径](docs/EVALUATION.md)   | 状态、义务覆盖、置信度、评分和 LLM 契约 |
 | [检索](docs/检索.md)             | BM25F、Dense、RRF、Rerank               |
-| [API](docs/API.md)               | REST API 摘要                           |
+| [API](docs/API.md)               | 前后端接口契约、请求/响应和错误码        |
 | [配置与运行](docs/配置与运行.md) | 环境变量、部署、排障                    |
 | [功能与界面](docs/功能与界面.md) | 页面能力、操作流程、截图                |
 

@@ -48,7 +48,7 @@ const EMPTY: FormState = {
  * 区分开发环境 .env 接管和生产设置页写入，并支持连接测试。
  */
 export function SettingsPage() {
-  const resource = useResource(() => api.getSettings(), []);
+  const resource = useResource(() => api.getSettings(), [], { key: "settings" });
   const [form, setForm] = useState<FormState>(EMPTY);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -216,7 +216,7 @@ export function SettingsPage() {
             ))}
           </div>
 
-          <div className="form-row">
+          <div className="form-row provider-row">
             <label className="field field-grow">
               <span>Base URL</span>
               <input
@@ -225,7 +225,7 @@ export function SettingsPage() {
                 disabled={envMode}
                 onChange={(event) => patch({ baseUrl: event.target.value })}
               />
-              <small>兼容 OpenAI Chat Completions 接口，通常以 /v1 结尾。</small>
+              <small>兼容 OpenAI Chat Completions 接口，可带 /v1。</small>
             </label>
             <label className="field">
               <span>模型名称</span>
@@ -235,6 +235,7 @@ export function SettingsPage() {
                 disabled={envMode}
                 onChange={(event) => patch({ model: event.target.value })}
               />
+              <small>填写服务商实际的模型 ID。</small>
             </label>
           </div>
 

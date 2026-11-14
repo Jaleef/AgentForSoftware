@@ -10,6 +10,7 @@ export interface RerankConfig {
   apiKey: string;
   model: string;
   timeoutMs: number;
+  path: string;
 }
 
 export interface RerankResult {
@@ -26,6 +27,7 @@ export function rerankConfig(): RerankConfig | undefined {
     apiKey: (process.env.RERANK_API_KEY ?? "").trim(),
     model,
     timeoutMs: Math.max(5000, Number(process.env.RERANK_TIMEOUT_MS ?? 60000) || 60000),
+    path: (process.env.RERANK_PATH ?? "").trim(),
   };
 }
 
@@ -33,13 +35,28 @@ export function isRerankConfigured(): boolean {
   return Boolean(rerankConfig());
 }
 
-function endpoint(baseUrl: string): string {
-  const base = baseUrl.trim().replace(/\/+$/, "");
-  return base.endsWith("/rerank") ? base : `${base}/rerank`;
+/**
+ * 计算 rerank endpoint。
+ *
+ * 兼容两类服务：
+ * - 通用服务：base + /rerank（可用 RERANK_PATH 覆盖）；
+ * - 阿里云 MaaS：OpenAI 兼容 rerank 在 /compatible-api/v1/reranks，
+ *   不在 embedding 使用的 /compatible-mode/v1 下。
+ */
+function endpoint(baseUrl: string, path: string): string {
+  let base = baseUrl.trim().replace(/\/+$/, "");
+  const aliyun = /maas\.aliyuncs\.com/i.test(base);
+  if (aliyun && /\/compatible-mode\/v1$/i.test(base)) {
+    base = base.replace(/\/compatible-mode\/v1$/i, "/compatible-api/v1");
+  }
+  if (path) return `${base}/${path.replace(/^\/+/, "")}`;
+  if (/\/reranks?$/i.test(base)) return base;
+  return `${base}/${aliyun ? "reranks" : "rerank"}`;
 }
 
 interface RerankResponse {
   results?: Array<{ index?: number; relevance_score?: number; score?: number }>;
+  output?: { results?: Array<{ index?: number; relevance_score?: number; score?: number }> };
   error?: { message?: string };
 }
 
@@ -60,7 +77,7 @@ export async function rerankCandidates(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.timeoutMs);
   try {
-    const response = await fetch(endpoint(config.baseUrl), {
+    const response = await fetch(endpoint(config.baseUrl, config.path), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -86,7 +103,7 @@ export async function rerankCandidates(
       throw new Error(`Rerank 请求失败（HTTP ${response.status}）：${message}`);
     }
     const parsed = JSON.parse(text) as RerankResponse;
-    return (parsed.results ?? [])
+    return (parsed.results ?? parsed.output?.results ?? [])
       .map((item) => ({
         index: Number(item.index ?? -1),
         score: Number(item.relevance_score ?? item.score ?? 0),

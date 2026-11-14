@@ -1,9 +1,12 @@
 /**
- * OpenAI 兼容 LLM 客户端。
+ * OpenAI 兼容 LLM 客户端适配层。
  *
- * 封装 Chat Completions、JSON 解析、超时/重试和并发控制。
+ * 底层使用官方 openai SDK（Chat Completions）；本层保留项目原有的
+ * LlmClient API，并统一处理 DeepSeek 兼容网关、JSON 模式降级、usage、
+ * 预算和取消。业务 Agent 不直接依赖 SDK。
  */
 
+import OpenAI from "openai";
 import type { LlmSettings } from "../types.js";
 import { readSettings } from "../store.js";
 import { safeJsonParse } from "../util/text.js";
@@ -32,49 +35,39 @@ export interface ChatOptions {
   signal?: AbortSignal;
 }
 
-interface CompletionResponse {
-  choices?: Array<{
-    message?: { content?: string | null; reasoning_content?: string | null };
-    finish_reason?: string;
-  }>;
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
-  error?: { message?: string; type?: string };
-}
-
-function endpoint(baseUrl: string): string {
+function normalizeBaseUrl(baseUrl: string): string {
   const base = baseUrl.trim().replace(/\/+$/, "");
-  if (base.endsWith("/chat/completions")) return base;
-  return `${base}/chat/completions`;
+  return base.endsWith("/chat/completions")
+    ? base.slice(0, -"/chat/completions".length)
+    : base;
 }
 
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new LlmError("请求已取消", undefined, false));
-      return;
-    }
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(new LlmError("请求已取消", undefined, false));
-      },
-      { once: true },
-    );
-  });
+function isAbort(error: unknown): boolean {
+  return (error as Error)?.name === "AbortError" || (error as Error)?.name === "APIUserAbortError";
+}
+
+function statusOf(error: unknown): number | undefined {
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
 }
 
 /**
- * OpenAI 兼容模型客户端。
+ * 官方 OpenAI SDK 适配层。
  *
- * 封装配置、Chat Completions 请求、超时重试和 JSON 解析。
+ * - 调用 `client.chat.completions.create`；
+ * - baseURL 兼容 DeepSeek/OpenAI 兼容网关；
+ * - 保留 Json mode 不支持时的 400 降级；
+ * - 记录 SDK 返回的 usage 和逻辑调用次数；
+ * - AbortSignal 直接传给 SDK 请求。
  */
 export class LlmClient {
   private settings: LlmSettings;
+  private client: OpenAI | null = null;
   private jsonModeSupported = true;
   private callCount = 0;
   private maxCalls = Number.POSITIVE_INFINITY;
+  private promptTokens = 0;
+  private completionTokens = 0;
 
   constructor(settings?: LlmSettings) {
     this.settings = settings ?? readSettings().llm;
@@ -82,6 +75,20 @@ export class LlmClient {
 
   get calls(): number {
     return this.callCount;
+  }
+
+  get usage(): { promptTokens: number; completionTokens: number; llmCalls: number } {
+    return {
+      promptTokens: this.promptTokens,
+      completionTokens: this.completionTokens,
+      llmCalls: this.callCount,
+    };
+  }
+
+  resetUsage(): void {
+    this.callCount = 0;
+    this.promptTokens = 0;
+    this.completionTokens = 0;
   }
 
   /** Hard cap for agent budgets; legacy callers keep the default unlimited value. */
@@ -97,104 +104,101 @@ export class LlmClient {
     return this.settings.mock;
   }
 
-/**
- * 调用 OpenAI 兼容 Chat Completions 接口。
- *
- * 处理请求体、超时、重试、JSON 模式降级和取消信号。
- */
-  async chat(messages: ChatMessage[], options: ChatOptions = {}): Promise<string> {
-    if (this.settings.mock) {
-      return "MOCK_OK";
+  /**
+   * 延迟创建 OpenAI SDK 客户端。
+   *
+   * 调用 `new OpenAI({ baseURL, timeout, maxRetries })`；不在模块加载时创建，
+   * 这样未配置模型的纯启发式流程不会初始化网络客户端。
+   */
+  private sdk(): OpenAI {
+    if (!this.client) {
+      if (!this.settings.baseUrl) {
+        throw new LlmError("未配置 LLM Base URL，请先到「设置」中配置模型服务。");
+      }
+      if (!this.settings.apiKey) {
+        throw new LlmError("未配置 API Key，请先到「设置」中配置模型服务。");
+      }
+      this.client = new OpenAI({
+        apiKey: this.settings.apiKey,
+        baseURL: normalizeBaseUrl(this.settings.baseUrl),
+        timeout: this.settings.timeoutMs,
+        // Keep retries inside the SDK; business-level batch fallback remains.
+        maxRetries: 3,
+      });
     }
-    if (!this.settings.baseUrl) throw new LlmError("未配置 LLM Base URL，请先到「设置」中配置模型服务。");
-    if (!this.settings.apiKey) throw new LlmError("未配置 API Key，请先到「设置」中配置模型服务。");
+    return this.client;
+  }
+
+  /**
+   * 调用 OpenAI SDK 的 Chat Completions。
+   *
+   * 负责 response_format 降级、usage 累计、AbortSignal、预算和错误转换；
+   * 业务 Agent 只看到字符串内容和 LlmError。
+   */
+  async chat(messages: ChatMessage[], options: ChatOptions = {}): Promise<string> {
+    if (this.settings.mock) return "MOCK_OK";
+    if (this.callCount >= this.maxCalls) {
+      throw new LlmError("已达到本次任务的 LLM 调用预算上限，请缩小范围或提高预算。", undefined, false);
+    }
 
     const json = options.json ?? false;
-    const body: Record<string, unknown> = {
+    const body = {
       model: this.settings.model,
       messages,
       temperature: options.temperature ?? this.settings.temperature,
       max_tokens: options.maxTokens ?? this.settings.maxTokens,
-      stream: false,
+      stream: false as const,
+      ...(json && this.settings.jsonMode && this.jsonModeSupported
+        ? { response_format: { type: "json_object" as const } }
+        : {}),
     };
-    if (json && this.settings.jsonMode && this.jsonModeSupported) {
-      body.response_format = { type: "json_object" };
-    }
 
-    let lastError: LlmError | undefined;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (this.callCount >= this.maxCalls) {
-        throw new LlmError("已达到本次任务的 LLM 调用预算上限，请缩小范围或提高预算。", undefined, false);
+    this.callCount++;
+    try {
+      const completion = await this.sdk().chat.completions.create(body, {
+        signal: options.signal,
+        timeout: options.timeoutMs ?? this.settings.timeoutMs,
+      });
+      this.promptTokens += completion.usage?.prompt_tokens ?? 0;
+      this.completionTokens += completion.usage?.completion_tokens ?? 0;
+      const content = completion.choices[0]?.message?.content ?? "";
+      if (!content.trim()) {
+        const finish = completion.choices[0]?.finish_reason;
+        throw new LlmError(
+          `LLM 返回空内容${finish ? `（finish_reason=${finish}）` : ""}`,
+          undefined,
+          true,
+        );
       }
-      this.callCount++;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? this.settings.timeoutMs);
-      const onAbort = (): void => controller.abort();
-      options.signal?.addEventListener("abort", onAbort, { once: true });
-      try {
-        const response = await fetch(endpoint(this.settings.baseUrl), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${this.settings.apiKey}`,
-          },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
-
-        const text = await response.text();
-        if (!response.ok) {
-          let message = text.slice(0, 500);
-          try {
-            const parsed = JSON.parse(text) as CompletionResponse;
-            message = parsed.error?.message ?? message;
-          } catch {
-            /* keep raw */
-          }
-          if (response.status === 400 && json && this.jsonModeSupported) {
-            // Some OpenAI-compatible gateways do not implement response_format.
-            this.jsonModeSupported = false;
-            delete body.response_format;
-            continue;
-          }
-          const retryable = response.status === 429 || response.status >= 500;
-          lastError = new LlmError(`LLM 请求失败（HTTP ${response.status}）：${message}`, response.status, retryable);
-          if (!retryable) throw lastError;
-          await sleep(800 * (attempt + 1), options.signal);
-          continue;
-        }
-
-        const parsed = safeJsonParse<CompletionResponse>(text);
-        if (!parsed) throw new LlmError(`LLM 返回了无法解析的响应：${text.slice(0, 200)}`, response.status, false);
-        const content = parsed.choices?.[0]?.message?.content ?? "";
-        if (!content.trim()) {
-          const finish = parsed.choices?.[0]?.finish_reason;
-          throw new LlmError(`LLM 返回空内容${finish ? `（finish_reason=${finish}）` : ""}`, response.status, true);
-        }
-        return content;
-      } catch (err) {
-        if (err instanceof LlmError) {
-          if (!err.retryable) throw err;
-          lastError = err;
-        } else if ((err as Error).name === "AbortError") {
-          lastError = new LlmError("LLM 请求超时，请检查网络或调大超时时间。", undefined, true);
-        } else {
-          lastError = new LlmError(`LLM 网络错误：${(err as Error).message}`, undefined, true);
-        }
-        if (attempt < 2) await sleep(800 * (attempt + 1), options.signal);
-      } finally {
-        clearTimeout(timeout);
-        options.signal?.removeEventListener("abort", onAbort);
+      return content;
+    } catch (error) {
+      if (error instanceof LlmError) throw error;
+      if (isAbort(error)) {
+        if (options.signal?.aborted) throw new LlmError("任务已取消", undefined, false);
+        throw new LlmError("LLM 请求超时，请检查网络或调大超时时间。", undefined, true);
       }
+
+      const status = statusOf(error);
+      const message = (error as Error).message || "LLM 请求失败";
+      // Some OpenAI-compatible gateways do not implement response_format.
+      if (status === 400 && json && this.jsonModeSupported) {
+        this.jsonModeSupported = false;
+        this.callCount--;
+        return this.chat(messages, { ...options, json: true });
+      }
+      throw new LlmError(
+        `LLM 请求失败${status ? `（HTTP ${status}）` : ""}：${message}`,
+        status,
+        status === 429 || (status !== undefined && status >= 500) || status === undefined,
+      );
     }
-    throw lastError ?? new LlmError("LLM 调用失败");
   }
 
-/**
- * 调用模型并要求返回 JSON。
- *
- * 去掉 Markdown 代码围栏后解析，解析失败抛出明确错误。
- */
+  /**
+   * 复用 chat()，清理 Markdown 代码围栏后解析 JSON。
+   *
+   * SDK/网关返回的 content 仍是字符串，因此 JSON 解析和错误信息由本层负责。
+   */
   async chatJson<T>(messages: ChatMessage[], options: ChatOptions = {}): Promise<T> {
     const content = await this.chat(messages, { ...options, json: true });
     const cleaned = content
@@ -208,6 +212,9 @@ export class LlmClient {
     return parsed;
   }
 
+  /**
+   * 轻量连通性测试：走同一条 SDK chat 路径，避免设置页与业务请求行为分叉。
+   */
   async testConnection(): Promise<{ ok: boolean; latencyMs: number; message: string }> {
     const start = Date.now();
     const content = await this.chat(
@@ -224,7 +231,8 @@ export class LlmClient {
 /**
  * 按并发上限执行异步任务。
  *
- * 保持结果顺序，并支持 AbortSignal 取消。
+ * 保留本项目自己的小工具而不是引入 p-limit：这里需要透传 AbortSignal、
+ * 保持结果顺序，并且与 LlmError 的取消语义绑定。
  */
 export async function mapLimit<T, R>(
   items: T[],

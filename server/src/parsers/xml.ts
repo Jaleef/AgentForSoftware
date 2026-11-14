@@ -1,8 +1,12 @@
 /**
- * 最小 XML DOM 解析器。
+ * XML DOM 适配层。
  *
- * 为 DOCX/XML 读取提供容错节点、属性、子节点和文本访问。
+ * 使用 fast-xml-parser 解析 OOXML，并转换为项目内部的 XmlNode。保留
+ * preserveOrder 以维持 w:p / w:tbl 在正文中的顺序；docx.ts 仍然只依赖
+ * XmlNode，不直接接触第三方 AST。
  */
+
+import { XMLParser } from "fast-xml-parser";
 
 export interface XmlNode {
   name: string;
@@ -11,16 +15,14 @@ export interface XmlNode {
   text: string;
 }
 
-function decodeEntities(input: string): string {
-  return input
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&");
-}
+const parser = new XMLParser({
+  preserveOrder: true,
+  ignoreAttributes: false,
+  attributeNamePrefix: "@",
+  trimValues: false,
+  parseTagValue: false,
+  parseAttributeValue: false,
+});
 
 export function localName(name: string): string {
   const idx = name.indexOf(":");
@@ -55,97 +57,57 @@ export function attr(node: XmlNode | undefined, name: string): string {
   return "";
 }
 
-export function textOf(node: XmlNode): string {
-  if (node.text) return node.text;
-  return "";
+function attrsOf(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object") return {};
+  const attrs: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const name = key.startsWith("@") ? key.slice(1) : key;
+    attrs[name] = String(value ?? "");
+  }
+  return attrs;
 }
 
-/** A small, tolerant XML parser sufficient for OOXML parts. */
+/**
+ * 把 fast-xml-parser 的 preserveOrder 数组转换为 XmlNode。
+ *
+ * 第三方格式：{ "w:p": [...children], ":@": { "@w:val": "..." } }
+ * 内部格式：{ name: "w:p", attrs, children, text }
+ * 文本节点保留为 name="#text"，兼容 docx.ts 的现有遍历逻辑。
+ */
+function convertEntries(entries: unknown[]): XmlNode[] {
+  const result: XmlNode[] = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    if (typeof record["#text"] === "string") {
+      result.push({ name: "#text", attrs: {}, children: [], text: record["#text"] });
+      continue;
+    }
+    for (const [name, value] of Object.entries(record)) {
+      if (name === "#text" || name === ":@") continue;
+      const children = Array.isArray(value) ? convertEntries(value) : [];
+      result.push({ name, attrs: attrsOf(record[":@"]), children, text: "" });
+    }
+  }
+  return result;
+}
+
+/**
+ * 解析 OOXML/XML 文本。
+ *
+ * 调用 fast-xml-parser 的 XMLParser，开启 preserveOrder 以保留表格和
+ * 段落的原始顺序。XML 不合法时抛出 Error，由 docx.ts 包装为解析失败。
+ */
 export function parseXml(xml: string): XmlNode {
-  const root: XmlNode = { name: "#document", attrs: {}, children: [], text: "" };
-  const stack: XmlNode[] = [root];
-  let i = 0;
-  const len = xml.length;
-
-  while (i < len) {
-    const lt = xml.indexOf("<", i);
-    if (lt < 0) {
-      const text = xml.slice(i);
-      if (text) stack[stack.length - 1].children.push({ name: "#text", attrs: {}, children: [], text });
-      break;
-    }
-    if (lt > i) {
-      const text = xml.slice(i, lt);
-      if (text) stack[stack.length - 1].children.push({ name: "#text", attrs: {}, children: [], text });
-    }
-    if (xml.startsWith("<!--", lt)) {
-      const end = xml.indexOf("-->", lt + 4);
-      i = end < 0 ? len : end + 3;
-      continue;
-    }
-    if (xml.startsWith("<![CDATA[", lt)) {
-      const end = xml.indexOf("]]>", lt + 9);
-      const text = xml.slice(lt + 9, end < 0 ? len : end);
-      stack[stack.length - 1].children.push({ name: "#text", attrs: {}, children: [], text });
-      i = end < 0 ? len : end + 3;
-      continue;
-    }
-    if (xml.startsWith("<?", lt)) {
-      const end = xml.indexOf("?>", lt + 2);
-      i = end < 0 ? len : end + 2;
-      continue;
-    }
-    if (xml.startsWith("<!", lt)) {
-      const end = xml.indexOf(">", lt + 2);
-      i = end < 0 ? len : end + 1;
-      continue;
-    }
-    const gt = findTagEnd(xml, lt + 1);
-    if (gt < 0) break;
-    const raw = xml.slice(lt + 1, gt);
-    if (raw.startsWith("/")) {
-      const name = raw.slice(1).trim();
-      for (let s = stack.length - 1; s > 0; s--) {
-        if (stack[s].name === name) {
-          stack.length = s;
-          break;
-        }
-      }
-      i = gt + 1;
-      continue;
-    }
-    const selfClosing = raw.endsWith("/");
-    const content = selfClosing ? raw.slice(0, -1) : raw;
-    const spaceIdx = content.search(/\s/);
-    const name = (spaceIdx < 0 ? content : content.slice(0, spaceIdx)).trim();
-    const attrs: Record<string, string> = {};
-    if (spaceIdx >= 0) {
-      const attrText = content.slice(spaceIdx + 1);
-      const re = /([^\s=]+)\s*=\s*("([^"]*)"|'([^']*)')/g;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(attrText))) {
-        attrs[m[1]] = decodeEntities(m[3] ?? m[4] ?? "");
-      }
-    }
-    const node: XmlNode = { name, attrs, children: [], text: "" };
-    stack[stack.length - 1].children.push(node);
-    if (!selfClosing) stack.push(node);
-    i = gt + 1;
+  try {
+    const parsed = parser.parse(xml) as unknown[];
+    return {
+      name: "#document",
+      attrs: {},
+      children: convertEntries(Array.isArray(parsed) ? parsed : []),
+      text: "",
+    };
+  } catch (error) {
+    throw new Error(`XML 解析失败：${(error as Error).message}`);
   }
-  return root;
-}
-
-function findTagEnd(xml: string, from: number): number {
-  let quote: string | null = null;
-  for (let i = from; i < xml.length; i++) {
-    const ch = xml[i];
-    if (quote) {
-      if (ch === quote) quote = null;
-    } else if (ch === '"' || ch === "'") {
-      quote = ch;
-    } else if (ch === ">") {
-      return i;
-    }
-  }
-  return -1;
 }

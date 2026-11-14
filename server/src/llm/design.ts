@@ -10,7 +10,7 @@ import { mapLimit } from "./client.js";
 import { assignDesignCodes, designUnitFromPoint } from "../parsers/design.js";
 import { cleanText } from "../util/text.js";
 import {
-  generateSubsystemTaxonomy,
+  resolveTaxonomy,
   taxonomyCategoryFor,
   type TaxonomyResult,
 } from "./taxonomy.js";
@@ -291,14 +291,12 @@ export async function runDesignAgent(
     );
   }
 
-  onProgress?.("LLM 归纳设计子系统…");
-  const taxonomy = await generateSubsystemTaxonomy(
-    points.filter((point) => point.judged && point.accepted),
-    client,
-  );
+  onProgress?.("归纳设计子系统…");
+  const acceptedPoints = points.filter((point) => point.judged && point.accepted);
+  const taxonomy = await resolveTaxonomy(acceptedPoints, client);
   warnings.push(...taxonomy.warnings);
-  if (!taxonomy.usedLlm && points.some((point) => point.accepted)) {
-    warnings.push("未成功生成设计子系统分类，设计单元将统一归入“全局”。");
+  if (taxonomy.source === "none" && points.some((point) => point.accepted)) {
+    warnings.push("未能生成设计子系统分类，设计单元将统一归入“全局”。");
   }
 
   onProgress?.(`LLM 生成设计单元（${points.filter((point) => point.accepted).length} 个设计点）…`);
@@ -326,4 +324,5 @@ export async function runDesignAgent(
     usedLlm: judgement.usedLlm || generation.usedLlm || taxonomy.usedLlm,
   };
 }
+
 

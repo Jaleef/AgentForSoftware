@@ -23,9 +23,10 @@ related_code: []
 | DOC-FLOW-001 | [数据流](数据流.md) | backend | approved | 每类操作的调用链、落盘和失败回退 |
 | DOC-ARCH-001 | [架构说明](ARCHITECTURE.md) | architecture | approved | 模块、解析器、存储、评价执行 |
 | DOC-AGENT-001 | [Agent 架构](Agent架构.md) | architecture | approved | 主/子 Agent、契约、预算、审计 |
+| DOC-DEPS-001 | [依赖与适配层](依赖与适配层.md) | architecture | approved | 成熟库、适配层、注释和替换边界 |
 | DOC-EVAL-001 | [评价口径](EVALUATION.md) | architecture | approved | 状态、覆盖、置信度、评分、LLM 契约 |
 | DOC-RET-001 | [检索](检索.md) | architecture | approved | BM25F、Dense、RRF、Rerank |
-| DOC-API-001 | [API](API.md) | backend | approved | REST API 摘要 |
+| DOC-API-001 | [API](API.md) | backend | approved | 前后端接口契约、请求/响应、错误码 |
 | DOC-OPS-001 | [配置与运行](配置与运行.md) | ops | approved | 环境变量、部署、排障、开发命令 |
 | DOC-QA-001 | [测试与验收](测试与验收.md) | QA | approved | 测试策略、验收标准、质量指标 |
 | DOC-PLAN-001 | [限制与路线图](限制与路线图.md) | tech-lead | approved | 已知限制、非目标、后续计划 |

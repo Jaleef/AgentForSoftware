@@ -19,7 +19,8 @@ import type {
 import type { LlmClient } from "../llm/client.js";
 import { mapLimit } from "../llm/client.js";
 import { cleanText, clamp, safeJsonParse } from "../util/text.js";
-import { newId } from "../util/id.js";
+import { newId, sha256 } from "../util/id.js";
+import { readCoverageCache, writeCoverageCache } from "../store.js";
 import {
   buildDesignIndex,
   buildSymbolIndex,
@@ -42,6 +43,7 @@ export class CancelledError extends Error {
 
 export interface EvaluationOptions {
   levels: RelationLevel[];
+  profile?: "economy" | "balanced" | "quality";
   subsystems: string[];
   requirements: RequirementUnit[];
   designUnits: DesignUnit[];
@@ -63,6 +65,7 @@ export interface EvaluationResult {
   warnings: string[];
   usedLlm: boolean;
   method: "llm" | "heuristic";
+  usage?: { promptTokens: number; completionTokens: number; llmCalls: number };
 }
 
 interface RawTargetCoverage {
@@ -410,21 +413,25 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-function designPayload(unit: DesignUnit) {
+function designPayload(unit: DesignUnit, profile: "economy" | "balanced" | "quality" = "quality") {
+  const economy = profile === "economy";
+  const compact = profile !== "quality";
   return {
     code: unit.code,
     type: unit.type,
     subsystem: unit.subsystem,
     name: unit.name,
-    summary: unit.summary,
-    description: clip(unit.description, 420),
-    obligations: unit.obligations.slice(0, 8).map((o) => clip(o, 110)),
-    interface: clip(unit.interfaceText, 280),
-    input: clip(unit.input, 180),
-    output: clip(unit.output, 180),
+    summary: clip(unit.summary, economy ? 60 : compact ? 100 : 240),
+    description: clip(unit.description, economy ? 120 : compact ? 220 : 420),
+    obligations: unit.obligations
+      .slice(0, economy ? 5 : compact ? 6 : 8)
+      .map((o) => clip(o, economy ? 60 : compact ? 80 : 110)),
+    interface: clip(unit.interfaceText, economy ? 100 : compact ? 160 : 280),
+    input: clip(unit.input, economy ? 60 : compact ? 100 : 180),
+    output: clip(unit.output, economy ? 60 : compact ? 100 : 180),
     fields: unit.fields
-      .slice(0, 30)
-      .map((f) => `${f.name}:${f.meaning || f.type}`),
+      .slice(0, economy ? 6 : compact ? 10 : 30)
+      .map((f) => `${f.name}:${clip(f.meaning || f.type, economy ? 25 : compact ? 40 : 120)}`),
   };
 }
 
@@ -440,12 +447,14 @@ function requirementPayload(unit: RequirementUnit) {
   };
 }
 
+const REQ_PROMPT_VERSION = "req-coverage-v2";
+
 const REQ_SYSTEM = `你是软件质量评价专家，负责判断"设计对需求原子义务"的覆盖情况。判断必须严谨、可审计，只依据提供的需求与候选设计文本。
 
-输入中每条需求包含 obligations（带 id 的原子义务）和 candidates（候选设计）。你要逐个设计判断它覆盖了哪些义务，不要直接给整条需求下 satisfied/partial 结论。
+输入包含 designs（去重后的候选设计目录）和 requirements。每条需求有 obligations（带 id 的原子义务）和 candidateCodes（该需求允许使用的设计 code）。你要逐个设计判断它覆盖了哪些义务，不要直接给整条需求下 satisfied/partial 结论。
 
 规则：
-1. designCode 只能从该需求的 candidates 中选择；obligationId 只能使用输入 obligations 中的 id；不得编造。
+1. designCode 只能从该需求的 candidateCodes 中选择；obligationId 只能使用输入 obligations 中的 id；不得编造。
 2. 一个设计可以只覆盖部分义务；多个设计可以共同覆盖同一个需求；同一义务可以被多个设计覆盖。
 3. coveredObligations：该设计完整覆盖的义务 id。
 4. partialObligations：该设计只部分覆盖、缺少输入输出/边界/约束的义务 id。
@@ -638,6 +647,10 @@ export async function runEvaluation(
     signal,
     onProgress,
   } = options;
+  const profile = options.profile ?? "balanced";
+  const topK = profile === "economy" ? 4 : 6;
+  const reqBatchSize = profile === "economy" ? 6 : 4;
+  const judgeMaxTokens = profile === "economy" ? 3072 : profile === "balanced" ? 3072 : 4096;
   const warnings: string[] = [];
   let warningOverflow = 0;
   const addWarning = (message: string): void => {
@@ -677,7 +690,7 @@ export async function runEvaluation(
       for (const s of file.symbols) symbolById.set(s.id, s);
 
   const useLlm = Boolean(client && !client.isMock);
-  const reqBatches = useLlm ? chunk(filteredRequirements, 4) : [];
+  const reqBatches = useLlm ? chunk(filteredRequirements, reqBatchSize) : [];
   const designBatches =
     useLlm && levels.includes("design_code") ? chunk(filteredDesign, 3) : [];
   const totalBatches =
@@ -734,41 +747,78 @@ export async function runEvaluation(
         Math.max(1, concurrency),
         async (batch, batchIndex) => {
           if (signal?.aborted) throw new CancelledError();
-          const payload = batch.map((requirement) => {
-            const candidates = (rankedByCode.get(requirement.code) ?? [])
-              .slice(0, 6)
-              .map((r) => designPayload(r.unit));
-            return { requirement: requirementPayload(requirement), candidates };
+          const catalog = new Map<string, DesignUnit>();
+          const requirementPayloads = batch.map((requirement) => {
+            const candidates = (rankedByCode.get(requirement.code) ?? []).slice(0, topK);
+            for (const candidate of candidates) catalog.set(candidate.unit.code, candidate.unit);
+            return {
+              ...requirementPayload(requirement),
+              candidateCodes: candidates.map((candidate) => candidate.unit.code),
+            };
           });
+          const payload = {
+            designs: [...catalog.values()].map((unit) => designPayload(unit, profile)),
+            requirements: requirementPayloads,
+          };
           let judged = new Map<string, RawJudgment>();
+          const cacheKey = sha256(
+            JSON.stringify({
+              model: client.model,
+              profile,
+              prompt: REQ_PROMPT_VERSION,
+              payload,
+            }),
+          );
+          let cacheHit = false;
           try {
-            const response = await client.chatJson<unknown>(
-              [
-                { role: "system", content: REQ_SYSTEM },
-                {
-                  role: "user",
-                  content: `请评审以下需求与候选设计：\n${JSON.stringify(payload, null, 2)}`,
-                },
-              ],
-              { temperature: 0.1, maxTokens: 4096, signal },
-            );
-            for (const item of normalizeItems(response)) {
-              const code = item.requirementCode ?? item.code;
-              if (code) judged.set(code, item);
+            const cached = readCoverageCache(cacheKey);
+            if (cached !== undefined) {
+              for (const item of normalizeItems(JSON.parse(cached))) {
+                const code = item.requirementCode ?? item.code;
+                if (code) judged.set(code, item);
+              }
+              cacheHit = true;
             }
-          } catch (err) {
-            if (signal?.aborted) throw new CancelledError();
-            addWarning(
-              `需求→设计批次 ${batchIndex + 1} 调用失败，已回退启发式：${(err as Error).message}`,
-            );
-            judged = new Map();
+          } catch {
+            /* invalid cache entry is ignored */
+          }
+
+          if (!cacheHit) {
+            try {
+              const response = await client.chatJson<unknown>(
+                [
+                  { role: "system", content: REQ_SYSTEM },
+                  {
+                    role: "user",
+                    content: `请评审以下需求与候选设计：\n${JSON.stringify(payload, null, 2)}`,
+                  },
+                ],
+                { temperature: 0.1, maxTokens: judgeMaxTokens, signal },
+              );
+              const items = normalizeItems(response);
+              for (const item of items) {
+                const code = item.requirementCode ?? item.code;
+                if (code) judged.set(code, item);
+              }
+              try {
+                writeCoverageCache(cacheKey, JSON.stringify(items), client.model, REQ_PROMPT_VERSION);
+              } catch {
+                /* cache is best-effort */
+              }
+            } catch (err) {
+              if (signal?.aborted) throw new CancelledError();
+              addWarning(
+                `需求→设计批次 ${batchIndex + 1} 调用失败，已回退启发式：${(err as Error).message}`,
+              );
+              judged = new Map();
+            }
           }
 
           for (const requirement of batch) {
             const ranked = rankedByCode.get(requirement.code) ?? [];
             const candidates = new Set(
               (rankedByCode.get(requirement.code) ?? [])
-                .slice(0, 6)
+                .slice(0, topK)
                 .map((r) => r.unit.code),
             );
             const item = judged.get(requirement.code);
@@ -1006,6 +1056,7 @@ export async function runEvaluation(
     warnings,
     usedLlm,
     method: usedLlm ? "llm" : "heuristic",
+    usage: client?.usage,
   };
 }
 

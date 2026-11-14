@@ -40,6 +40,7 @@ export async function startCampaignRun(campaignId: string, projectId: string): P
     });
   };
 
+  let client: LlmClient | undefined;
   try {
     const store = await getStore();
     const campaign = store.campaigns.find((c) => c.id === campaignId && c.projectId === projectId);
@@ -56,7 +57,7 @@ export async function startCampaignRun(campaignId: string, projectId: string): P
 
     const settings = readSettings().llm;
     let useLlm = !settings.mock && Boolean(settings.apiKey && settings.baseUrl && settings.model);
-    let client = useLlm ? new LlmClient(settings) : undefined;
+    client = useLlm ? new LlmClient(settings) : undefined;
     let preflightWarning = "";
     if (client) {
       try {
@@ -68,6 +69,7 @@ export async function startCampaignRun(campaignId: string, projectId: string): P
       }
     }
 
+    client?.resetUsage();
     await update((c) => {
       c.status = "running";
       c.phase = "preparing";
@@ -76,6 +78,7 @@ export async function startCampaignRun(campaignId: string, projectId: string): P
       c.provider = useLlm ? "openai-compatible" : "heuristic";
       c.model = useLlm ? settings.model : "规则匹配";
       c.pipeline = "agent";
+      c.profile = c.profile ?? "balanced";
     });
 
     const result = await runAgentEvaluation({
@@ -88,6 +91,7 @@ export async function startCampaignRun(campaignId: string, projectId: string): P
       snapshot,
       client,
       concurrency: Math.max(1, Math.min(settings.concurrency || 3, 8)),
+      profile: campaign.profile ?? "balanced",
       signal: controller.signal,
       onProgress: (phase, done, total, message) => {
         void update((c) => {
@@ -114,6 +118,7 @@ export async function startCampaignRun(campaignId: string, projectId: string): P
       c.method = result.method;
       c.warnings = warnings;
       c.pipeline = "agent";
+      c.usage = client?.usage;
       c.agentRuns = [...(c.agentRuns ?? []), ...result.agentRuns].slice(-50);
       c.progress = { done: 1, total: 1, message: `已完成 ${result.relations.length} 条一致性判定` };
       c.finishedAt = nowIso();
@@ -127,6 +132,7 @@ export async function startCampaignRun(campaignId: string, projectId: string): P
       c.finishedAt = nowIso();
       c.pipeline = "agent";
       c.agentRuns = [...(c.agentRuns ?? []), ...failedRuns].slice(-50);
+      c.usage = client?.usage;
       c.progress = { done: 0, total: 1, message: aborted ? "任务已取消" : "评价失败" };
     }).catch(() => undefined);
     if (!aborted) console.error("[campaign]", err);

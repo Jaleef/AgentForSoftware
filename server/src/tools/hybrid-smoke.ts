@@ -6,6 +6,7 @@
  */
 
 import { resolve } from "node:path";
+import "../config/env.js";
 import { parseDocxFile } from "../parsers/docx.js";
 import { parseRequirements } from "../parsers/requirements.js";
 import { parseDesign } from "../parsers/design.js";

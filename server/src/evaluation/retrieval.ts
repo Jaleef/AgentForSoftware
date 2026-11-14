@@ -230,14 +230,4 @@ export function rankCodeCandidates(
   return selected;
 }
 
-export function requirementQueryText(requirement: RequirementUnit): string {
-  return `${requirement.title} ${requirement.description} ${requirement.detail}`;
-}
 
-export function designQueryText(design: DesignUnit): string {
-  return designSearchText(design);
-}
-
-export function tokenizeForDebug(text: string): string[] {
-  return tokenize(text);
-}

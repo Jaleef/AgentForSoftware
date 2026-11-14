@@ -4,7 +4,7 @@
  * 把 Campaign 和 Relation 转成 Markdown/CSV 报告。
  */
 
-import type { Campaign, DocumentKind, StoredDocument } from "../types.js";
+import type { Campaign, StoredDocument } from "../types.js";
 
 function pct(n: number): string {
   return `${n.toFixed(1)}%`;
@@ -169,6 +169,3 @@ export function reportFileName(campaign: Campaign, ext: string): string {
   return `consistency-report-${stamp}-${campaign.id.slice(-6)}.${ext}`;
 }
 
-export function docKindLabel(kind: DocumentKind): string {
-  return kind === "srs" ? "需求文档" : "设计文档";
-}

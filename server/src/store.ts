@@ -353,6 +353,48 @@ export function isLlmConfigured(): boolean {
   return Boolean(llm.baseUrl && llm.model && (llm.apiKey || llm.mock));
 }
 
+/** Read a cached requirement→design LLM batch result. */
+export function readCoverageCache(cacheKey: string): string | undefined {
+  const database = getDb();
+  const row = database
+    .prepare("SELECT payload FROM coverage_cache WHERE cache_key = ?")
+    .get(cacheKey) as { payload?: string } | undefined;
+  if (!row?.payload) return undefined;
+  database
+    .prepare("UPDATE coverage_cache SET last_used_at = ? WHERE cache_key = ?")
+    .run(nowIso(), cacheKey);
+  return row.payload;
+}
+
+/** Store a successful requirement→design LLM batch result. */
+export function writeCoverageCache(
+  cacheKey: string,
+  payload: string,
+  model: string,
+  promptVersion: string,
+): void {
+  const database = getDb();
+  const now = nowIso();
+  database
+    .prepare(
+      `INSERT INTO coverage_cache(cache_key, model, prompt_version, payload, created_at, last_used_at)
+       VALUES(?, ?, ?, ?, ?, ?)
+       ON CONFLICT(cache_key) DO UPDATE SET
+         payload = excluded.payload,
+         model = excluded.model,
+         prompt_version = excluded.prompt_version,
+         last_used_at = excluded.last_used_at`,
+    )
+    .run(cacheKey, model, promptVersion, payload, now, now);
+}
+
+/** Remove all cached evaluation batches. */
+export function clearCoverageCache(): number {
+  const database = getDb();
+  const result = database.prepare("DELETE FROM coverage_cache").run();
+  return Number(result.changes ?? 0);
+}
+
 /** Close the database; used by tests and graceful shutdown. */
 export function closeStore(): void {
   db?.close();

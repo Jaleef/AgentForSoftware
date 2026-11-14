@@ -31,9 +31,11 @@ import { STATUS_LABEL, STATUS_TONE } from "../types";
 export function ReportDetailPage() {
   const { projectId = "", campaignId = "" } = useParams();
   const navigate = useNavigate();
-  const campaign = useResource(() => api.getCampaign(projectId, campaignId), [projectId, campaignId]);
-  const project = useResource(() => api.getProject(projectId), [projectId]);
-  const documents = useResource(() => api.listDocuments(projectId), [projectId]);
+  const campaign = useResource(() => api.getCampaign(projectId, campaignId), [projectId, campaignId], {
+    key: "campaign",
+  });
+  const project = useResource(() => api.getProject(projectId), [projectId], { key: "project" });
+  const documents = useResource(() => api.listDocuments(projectId), [projectId], { key: "documents" });
 
   if (campaign.loading && !campaign.data) {
     return (

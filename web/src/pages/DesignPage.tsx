@@ -61,7 +61,9 @@ export function DesignPage() {
   const [searchParams] = useSearchParams();
   const focusCode = searchParams.get("focus") ?? "";
   const appliedFocus = useRef<string | null>(null);
-  const resource = useResource(() => api.getDocument(projectId, "sdd"), [projectId]);
+  const resource = useResource(() => api.getDocument(projectId, "sdd"), [projectId], {
+    key: "document-sdd",
+  });
   const doc = resource.data;
 
   const [origin, setOrigin] = useState("全部");

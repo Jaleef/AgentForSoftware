@@ -252,9 +252,6 @@ export function overlapScore(query: Set<string>, target: Set<string>): number {
   return weight === 0 ? 0 : hit / weight;
 }
 
-export function similarity(a: string, b: string): number {
-  return jaccard(tokenSet(a), tokenSet(b));
-}
 
 /**
  * 从文本中提取高频关键词。

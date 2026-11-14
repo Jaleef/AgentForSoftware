@@ -33,22 +33,27 @@ import { STATUS_LABEL, STATUS_TONE } from "../types";
 export function EvaluationPage() {
   const { projectId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const project = useResource(() => api.getProject(projectId), [projectId]);
-  const designDoc = useResource(() => api.getDocument(projectId, "sdd"), [projectId]);
+  const project = useResource(() => api.getProject(projectId), [projectId], { key: "project" });
+  const designDoc = useResource(() => api.getDocument(projectId, "sdd"), [projectId], {
+    key: "document-sdd",
+  });
   const snapshot = useResource(
     () => api.listSnapshots(projectId).then((list) => list.find((item) => item.status === "ready")),
     [projectId],
+    { key: "snapshot-latest" },
   );
-  const campaigns = useResource(() => api.listCampaigns(projectId), [projectId]);
+  const campaigns = useResource(() => api.listCampaigns(projectId), [projectId], { key: "campaigns" });
 
   const [campaignId, setCampaignId] = useState<string | null>(searchParams.get("campaign"));
   const campaign = useResource(
     () => (campaignId ? api.getCampaign(projectId, campaignId) : Promise.resolve(null)),
     [projectId, campaignId],
+    { key: "campaign" },
   );
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [name, setName] = useState("");
+  const [profile, setProfile] = useState<"economy" | "balanced" | "quality">("balanced");
   const [levels, setLevels] = useState<Array<"requirement_design" | "design_code">>([
     "requirement_design",
     "design_code",
@@ -122,7 +127,12 @@ export function EvaluationPage() {
     setCreating(true);
     setError("");
     try {
-      const created = await api.createCampaign(projectId, { name: name.trim(), levels, subsystems });
+      const created = await api.createCampaign(projectId, {
+        name: name.trim(),
+        levels,
+        subsystems,
+        profile,
+      });
       setName("");
       setCampaignId(created.id);
       campaigns.reload();
@@ -196,7 +206,18 @@ export function EvaluationPage() {
               <span>任务名称（可选）</span>
               <input value={name} placeholder="例如：V2.7.3 设计评审" onChange={(event) => setName(event.target.value)} />
             </label>
+            <label className="field">
+              <span>评价模式</span>
+              <select value={profile} onChange={(event) => setProfile(event.target.value as typeof profile)}>
+                <option value="economy">经济（Top 4）</option>
+                <option value="balanced">标准（Top 6）</option>
+                <option value="quality">精细（Top 6 + 完整字段）</option>
+              </select>
+            </label>
           </div>
+          <p className="muted small">
+            经济模式发送更少候选、输出更短，费用最低；标准模式为默认；精细模式保留完整候选字段。
+          </p>
           <div className="level-options">
             <label className={`level-option ${!hasRd ? "disabled" : ""}`}>
               <input
@@ -654,6 +675,17 @@ function CampaignSummaryView({
               {campaign.method === "llm" ? `LLM · ${campaign.model}` : "启发式规则"}
             </Tag>
             <Tag tone="gray">{formatDate(campaign.finishedAt ?? campaign.createdAt)}</Tag>
+            {campaign.profile && (
+              <Tag tone="gray">
+                {campaign.profile === "economy" ? "经济模式" : campaign.profile === "quality" ? "精细模式" : "标准模式"}
+              </Tag>
+            )}
+            {campaign.usage && (
+              <Tag tone="gray">
+                LLM {campaign.usage.llmCalls} 次 · 输入 {campaign.usage.promptTokens.toLocaleString()} / 输出{" "}
+                {campaign.usage.completionTokens.toLocaleString()} tokens
+              </Tag>
+            )}
           </div>
         </div>
         <div className="summary-metrics">
